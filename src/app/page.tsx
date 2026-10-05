@@ -1,7 +1,7 @@
 import TableGrid from '@/components/salon/TableGrid';
 
 // Evita el prerender estático (causa del error "workStore" en StackBlitz)
-export const dynamic = 'force-dynamic';
+//export const dynamic = 'force-dynamic';
 
 export default function SalonPage() {
   return (
