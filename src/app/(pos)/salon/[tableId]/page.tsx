@@ -1,15 +1,19 @@
 import Link from 'next/link';
+import OrderMenu from '@/components/salon/OrderMenu';
 
 export default function MesaPage({ params }: { params: { tableId: string } }) {
   return (
-    <main className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-3xl mx-auto space-y-4">
-        <Link href="/" className="text-sm text-slate-600 hover:underline">
+    <main className="min-h-screen bg-slate-50">
+      <header className="h-16 bg-white border-b px-4 flex items-center">
+        <Link
+          href="/"
+          className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline"
+        >
           Volver al salón
         </Link>
-        <h1 className="text-2xl font-bold text-slate-800">Mesa</h1>
-        <p className="text-slate-600">ID: {params.tableId}</p>
-      </div>
+      </header>
+
+      <OrderMenu tableId={params.tableId} />
     </main>
   );
 }
