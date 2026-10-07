@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/browser';
 
@@ -21,18 +21,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<Role | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Recuerda de qué usuario es el rol cargado, para no volver a pedirlo
+  // en cada renovación del token (pasa cada hora).
+  const loadedUserRef = useRef<string | null>(null);
+
   useEffect(() => {
     let active = true;
 
     async function apply(next: Session | null) {
       if (!active) return;
-      setSession(next);
 
       if (!next) {
+        loadedUserRef.current = null;
+        setSession(null);
         setRole(null);
         setLoading(false);
         return;
       }
+
+      // Mismo usuario con rol ya cargado: solo se actualiza la sesión
+      if (loadedUserRef.current === next.user.id) {
+        setSession(next);
+        return;
+      }
+
+      // Usuario nuevo: se muestra "Verificando sesión…" hasta tener el rol,
+      // así nunca aparece una sesión sin rol por un instante.
+      setLoading(true);
 
       const { data, error } = await supabase
         .from('profiles')
@@ -42,6 +57,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!active) return;
       if (error) console.error('Error leyendo el perfil:', error);
+
+      loadedUserRef.current = next.user.id;
+      setSession(next);
       setRole((data?.role as Role) ?? null);
       setLoading(false);
     }
