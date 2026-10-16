@@ -11,6 +11,11 @@ const SECTIONS = [
     title: 'Productos y categorías',
     description: 'Menú, precios y productos activos.',
   },
+  {
+    href: '/admin/mozos',
+    title: 'Mozos',
+    description: 'Personal del salón y sus PIN de ingreso.',
+  },
 ];
 
 export default function AdminPage() {

@@ -75,34 +75,42 @@ export async function getOpenOrder(tableId: string) {
   return data as unknown as OpenOrder | null;
 }
 
-export async function sendOrder(tableId: string, items: NewItem[]) {
+export async function sendOrder(tableId: string, items: NewItem[], staffToken: string | null) {
   const supabase = createClient();
   const { data, error } = await supabase.rpc('send_order', {
     p_table_id: tableId,
     p_items: items,
+    p_staff_token: staffToken,
   });
 
   if (error) throw error;
   return data as string;
 }
 
-export async function requestBill(tableId: string) {
+export async function requestBill(tableId: string, staffToken: string | null) {
   const supabase = createClient();
-  const { error } = await supabase.rpc('request_bill', { p_table_id: tableId });
+  const { error } = await supabase.rpc('request_bill', {
+    p_table_id: tableId,
+    p_staff_token: staffToken,
+  });
   if (error) throw error;
 }
 
-export async function cancelBillRequest(tableId: string) {
+export async function cancelBillRequest(tableId: string, staffToken: string | null) {
   const supabase = createClient();
-  const { error } = await supabase.rpc('cancel_bill_request', { p_table_id: tableId });
+  const { error } = await supabase.rpc('cancel_bill_request', {
+    p_table_id: tableId,
+    p_staff_token: staffToken,
+  });
   if (error) throw error;
 }
 
-export async function payOrder(tableId: string, method: PaymentMethod) {
+export async function payOrder(tableId: string, method: PaymentMethod, staffToken: string | null) {
   const supabase = createClient();
   const { data, error } = await supabase.rpc('pay_order', {
     p_table_id: tableId,
     p_payment_method: method,
+    p_staff_token: staffToken,
   });
 
   if (error) throw error;

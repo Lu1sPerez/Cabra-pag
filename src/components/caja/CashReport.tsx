@@ -299,6 +299,7 @@ export default function CashReport() {
                         <tr className="text-left text-slate-500 border-b">
                           <th className="py-2 font-medium">Hora</th>
                           <th className="py-2 font-medium">Mesa</th>
+                          <th className="py-2 font-medium">Cobró</th>
                           <th className="py-2 font-medium">Medio de pago</th>
                           <th className="py-2 font-medium text-right">Total</th>
                         </tr>
@@ -313,6 +314,7 @@ export default function CashReport() {
                               })}
                             </td>
                             <td className="py-2">{o.tables?.name ?? '—'}</td>
+                            <td className="py-2">{o.closer?.name ?? 'Admin'}</td>
                             <td className="py-2">
                               {METHODS.find((m) => m.id === o.payment_method)?.label ?? 'Sin dato'}
                             </td>

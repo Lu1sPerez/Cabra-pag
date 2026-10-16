@@ -7,6 +7,7 @@ export type ClosedOrder = {
   payment_method: string | null;
   paid_at: string;
   tables: { name: string } | null;
+  closer: { name: string } | null;
   order_items: {
     quantity: number;
     unit_price: number | null;
@@ -36,7 +37,7 @@ export async function getClosedOrders(dateStr: string) {
   const { data, error } = await supabase
     .from('orders')
     .select(
-      'id, total, payment_method, paid_at, tables ( name ), order_items ( quantity, unit_price, products ( name ) )'
+      'id, total, payment_method, paid_at, tables ( name ), closer:staff!orders_closed_by_fkey ( name ), order_items ( quantity, unit_price, products ( name ) )'
     )
     .eq('status', 'closed')
     .gte('paid_at', start)

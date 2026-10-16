@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import PaymentPanel from '@/components/salon/PaymentPanel';
+import { isStaffSessionError, useStaff } from '@/components/auth/StaffProvider';
 import {
   cancelBillRequest,
   getMenu,
@@ -36,6 +37,8 @@ const money = (n: number) => `$${n.toLocaleString('es-AR')}`;
 
 export default function OrderMenu({ tableId }: { tableId: string }) {
   const router = useRouter();
+  const { staff, lock } = useStaff();
+  const staffToken = staff?.token ?? null;
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -137,6 +140,7 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
       if (okText) setFeedback({ type: 'ok', text: okText });
     } catch (e: any) {
       console.error(e);
+      if (isStaffSessionError(e)) return lock();
       setFeedback({ type: 'error', text: e?.message ?? 'Ocurrió un error inesperado.' });
     } finally {
       setWorking(false);
@@ -152,7 +156,8 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
           product_id: item.id,
           quantity: item.quantity,
           notes: item.notes.trim() || null,
-        }))
+        })),
+        staffToken
       );
       setCart([]);
       setTable((t) => (t && t.status === 'free' ? { ...t, status: 'occupied' } : t));
@@ -161,13 +166,13 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
 
   const handleRequestBill = () =>
     run(async () => {
-      await requestBill(tableId);
+      await requestBill(tableId, staffToken);
       setTable((t) => (t ? { ...t, status: 'paying' } : t));
     }, 'Cuenta pedida. La mesa quedó en "Por pagar".');
 
   const handleCancelBill = () =>
     run(async () => {
-      await cancelBillRequest(tableId);
+      await cancelBillRequest(tableId, staffToken);
       setTable((t) => (t ? { ...t, status: 'occupied' } : t));
     }, 'Mesa reabierta. Ya puedes agregar productos.');
 
@@ -175,10 +180,11 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
     setWorking(true);
     setPayError(null);
     try {
-      await payOrder(tableId, method);
+      await payOrder(tableId, method, staffToken);
       router.push('/');
     } catch (e: any) {
       console.error(e);
+      if (isStaffSessionError(e)) return lock();
       setPayError(e?.message ?? 'No se pudo registrar el cobro.');
       setWorking(false);
     }
