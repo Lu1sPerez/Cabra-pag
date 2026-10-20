@@ -5,7 +5,13 @@ import { Pencil, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { getStaffAdmin, saveStaff, setStaffActive, type AdminStaff } from '@/actions/staff-actions';
+import {
+  getStaffAdmin,
+  saveStaff,
+  setStaffActive,
+  setStaffManager,
+  type AdminStaff,
+} from '@/actions/staff-actions';
 
 const inputClass =
   'rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -139,9 +145,25 @@ export default function StaffEditor() {
                 <span className={cn('flex-1 font-medium text-slate-800', !s.is_active && 'opacity-50')}>
                   {s.name}
                 </span>
+                {s.is_manager && <Badge className="bg-blue-600">Encargado</Badge>}
                 <Badge variant={s.is_active ? 'secondary' : 'outline'}>
                   {s.is_active ? 'Activo' : 'Desactivado'}
                 </Badge>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={saving}
+                  onClick={() =>
+                    run(
+                      () => setStaffManager(s.id, !s.is_manager),
+                      s.is_manager
+                        ? `${s.name} ya no es encargado.`
+                        : `${s.name} ahora puede abrir el cierre de caja desde la tablet.`
+                    )
+                  }
+                >
+                  {s.is_manager ? 'Quitar encargado' : 'Hacer encargado'}
+                </Button>
                 <Button size="sm" variant="outline" onClick={() => setEditingId(s.id)} aria-label={`Editar ${s.name}`}>
                   <Pencil size={14} />
                   Editar
@@ -168,6 +190,7 @@ export default function StaffEditor() {
 
       <p className="text-xs text-slate-500">
         Desactivar a un mozo cierra su sesión al instante y conserva su historial de pedidos y cobros.
+        Los encargados pueden abrir el cierre de caja desde la tablet con su PIN; cada acceso queda registrado.
       </p>
     </div>
   );

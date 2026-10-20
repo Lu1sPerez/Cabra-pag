@@ -30,19 +30,16 @@ export function todayLocal() {
   return `${now.getFullYear()}-${mm}-${dd}`;
 }
 
-export async function getClosedOrders(dateStr: string) {
+// El admin consulta sin token; el encargado de la tablet envía el token de su PIN
+export async function getClosedOrders(dateStr: string, staffToken: string | null) {
   const supabase = createClient();
   const { start, end } = dayRange(dateStr);
 
-  const { data, error } = await supabase
-    .from('orders')
-    .select(
-      'id, total, payment_method, paid_at, tables ( name ), closer:staff!orders_closed_by_fkey ( name ), order_items ( quantity, unit_price, products ( name ) )'
-    )
-    .eq('status', 'closed')
-    .gte('paid_at', start)
-    .lt('paid_at', end)
-    .order('paid_at', { ascending: false });
+  const { data, error } = await supabase.rpc('get_cash_report', {
+    p_start: start,
+    p_end: end,
+    p_staff_token: staffToken,
+  });
 
   if (error) throw error;
   return (data ?? []) as unknown as ClosedOrder[];

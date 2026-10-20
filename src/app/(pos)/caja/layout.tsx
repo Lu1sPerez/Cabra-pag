@@ -1,5 +1,5 @@
-import RequireAuth from '@/components/auth/RequireAuth';
+import RequireManager from '@/components/auth/RequireManager';
 
 export default function CajaLayout({ children }: { children: React.ReactNode }) {
-  return <RequireAuth role="admin">{children}</RequireAuth>;
+  return <RequireManager>{children}</RequireManager>;
 }

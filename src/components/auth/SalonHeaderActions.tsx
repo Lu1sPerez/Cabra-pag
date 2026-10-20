@@ -14,7 +14,12 @@ export default function SalonHeaderActions() {
 
   if (role === 'terminal') {
     return (
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        {staff?.is_manager && (
+          <Link href="/caja" className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
+            Cierre de caja
+          </Link>
+        )}
         <span className="text-sm text-slate-600">
           Mozo: <strong className="text-slate-900">{staff?.name}</strong>
         </span>

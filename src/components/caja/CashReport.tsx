@@ -5,6 +5,7 @@ import { Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { isStaffSessionError, useStaff } from '@/components/auth/StaffProvider';
 import {
   countOpenOrders,
   getClosedOrders,
@@ -28,6 +29,8 @@ export default function CashReport() {
   const [date, setDate] = useState(todayLocal());
   const [orders, setOrders] = useState<ClosedOrder[]>([]);
   const [openCount, setOpenCount] = useState(0);
+  const { staff, lock } = useStaff();
+  const staffToken = staff?.token ?? null;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,7 +43,7 @@ export default function CashReport() {
     setLoading(true);
     setError(null);
 
-    Promise.all([getClosedOrders(date), countOpenOrders()])
+    Promise.all([getClosedOrders(date, staffToken), countOpenOrders()])
       .then(([rows, open]) => {
         if (!active) return;
         setOrders(rows);
@@ -48,6 +51,7 @@ export default function CashReport() {
       })
       .catch((e) => {
         console.error(e);
+        if (isStaffSessionError(e)) return lock();
         if (active) setError('No se pudo cargar el resumen. Revisa la conexión con Supabase.');
       })
       .finally(() => {
@@ -57,7 +61,7 @@ export default function CashReport() {
     return () => {
       active = false;
     };
-  }, [date]);
+  }, [date, staffToken, lock]);
 
   const summary = useMemo(() => {
     const total = orders.reduce((acc, o) => acc + Number(o.total ?? 0), 0);
