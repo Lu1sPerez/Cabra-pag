@@ -24,7 +24,7 @@ export type OpenOrder = {
 
 export type NewItem = { product_id: string; quantity: number; notes: string | null };
 
-export type PaymentMethod = 'cash' | 'debit' | 'credit' | 'transfer';
+export type PaymentMethod = 'cash' | 'card' | 'mercadopago' | 'transfer';
 
 export async function getMenu() {
   const supabase = createClient();

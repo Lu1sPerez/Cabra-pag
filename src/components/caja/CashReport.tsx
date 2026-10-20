@@ -15,9 +15,9 @@ import {
 
 const METHODS: { id: string; label: string }[] = [
   { id: 'cash', label: 'Efectivo' },
-  { id: 'debit', label: 'Débito' },
-  { id: 'credit', label: 'Crédito' },
-  { id: 'transfer', label: 'Transferencia / QR' },
+  { id: 'card', label: 'Tarjeta' },
+  { id: 'mercadopago', label: 'MercadoPago' },
+  { id: 'transfer', label: 'Transferencia' },
 ];
 
 const money = (n: number) =>

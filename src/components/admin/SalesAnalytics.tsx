@@ -9,9 +9,11 @@ import { BarList, ColumnChart, KpiTile, money } from '@/components/admin/analyti
 
 const PAYMENT_LABELS: Record<string, string> = {
   cash: 'Efectivo',
+  card: 'Tarjeta',
+  mercadopago: 'MercadoPago',
+  transfer: 'Transferencia',
   debit: 'Débito',
   credit: 'Crédito',
-  transfer: 'Transferencia / QR',
   unknown: 'Sin dato',
 };
 
@@ -168,6 +170,7 @@ export default function SalesAnalytics() {
           <h1 className="text-2xl font-bold text-slate-800">Análisis de ventas</h1>
           <p className="text-sm text-slate-500">
             Solo incluye mesas cobradas. Cada indicador se compara con un período anterior de la misma duración.
+            El tiempo por mesa no cuenta las ventas importadas, porque no tienen hora de apertura.
           </p>
         </div>
 
@@ -243,7 +246,7 @@ export default function SalesAnalytics() {
             />
             <KpiTile
               label="Tiempo promedio por mesa"
-              value={`${Math.round(Number(data.kpis.avg_minutes))} min`}
+              value={data.kpis.avg_minutes == null ? 'Sin datos' : `${Math.round(Number(data.kpis.avg_minutes))} min`}
               current={Number(data.kpis.avg_minutes)}
               previous={Number(data.previous.avg_minutes)}
               higherIsBetter={null}
