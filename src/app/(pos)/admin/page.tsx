@@ -2,6 +2,11 @@ import Link from 'next/link';
 
 const SECTIONS = [
   {
+    href: '/admin/analisis',
+    title: 'Análisis de ventas',
+    description: 'Ventas, horarios, productos, mozos y medios de pago.',
+  },
+  {
     href: '/admin/plano',
     title: 'Plano del salón',
     description: 'Zonas, mesas y su ubicación en el local.',

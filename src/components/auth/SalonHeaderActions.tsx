@@ -42,6 +42,9 @@ export default function SalonHeaderActions() {
         <Link href="/caja" className="text-slate-600 hover:text-slate-900 hover:underline">
           Cierre de caja
         </Link>
+        <Link href="/admin/analisis" className="text-slate-600 hover:text-slate-900 hover:underline">
+          Análisis
+        </Link>
         <Link href="/admin" className="text-slate-600 hover:text-slate-900 hover:underline">
           Administración
         </Link>
