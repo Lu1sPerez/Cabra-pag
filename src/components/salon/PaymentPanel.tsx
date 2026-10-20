@@ -1,16 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Banknote, CreditCard, QrCode, Wallet } from 'lucide-react';
+import { Banknote, CreditCard, Landmark, QrCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { PaymentMethod } from '@/actions/order-actions';
 
 const METHODS: { id: PaymentMethod; label: string; icon: typeof Banknote }[] = [
   { id: 'cash', label: 'Efectivo', icon: Banknote },
-  { id: 'debit', label: 'Débito', icon: Wallet },
-  { id: 'credit', label: 'Crédito', icon: CreditCard },
-  { id: 'transfer', label: 'Transferencia / QR', icon: QrCode },
+  { id: 'card', label: 'Tarjeta', icon: CreditCard },
+  { id: 'mercadopago', label: 'MercadoPago', icon: QrCode },
+  { id: 'transfer', label: 'Transferencia', icon: Landmark },
 ];
 
 const money = (n: number) => `$${n.toLocaleString('es-AR')}`;
