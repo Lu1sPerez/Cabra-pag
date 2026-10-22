@@ -7,6 +7,7 @@ export type AdminProduct = {
   category_id: string;
   name: string;
   price: number;
+  cost: number | null;
   is_active: boolean;
 };
 
@@ -14,7 +15,7 @@ export async function getCatalog() {
   const supabase = createClient();
   const [cats, prods] = await Promise.all([
     supabase.from('categories').select('id, name, sort_order').order('sort_order').order('name'),
-    supabase.from('products').select('id, category_id, name, price, is_active').order('name'),
+    supabase.from('products').select('id, category_id, name, price, cost, is_active').order('name'),
   ]);
 
   if (cats.error) throw cats.error;
@@ -25,6 +26,7 @@ export async function getCatalog() {
     products: (prods.data ?? []).map((p) => ({
       ...p,
       price: Number(p.price),
+      cost: p.cost == null ? null : Number(p.cost),
       is_active: p.is_active ?? true,
     })) as AdminProduct[],
   };
@@ -67,10 +69,14 @@ export async function createProduct(input: { category_id: string; name: string; 
   const { data, error } = await supabase
     .from('products')
     .insert({ ...input, is_active: true })
-    .select('id, category_id, name, price, is_active')
+    .select('id, category_id, name, price, cost, is_active')
     .single();
   if (error) throw error;
-  return { ...data, price: Number(data.price) } as AdminProduct;
+  return {
+    ...data,
+    price: Number(data.price),
+    cost: data.cost == null ? null : Number(data.cost),
+  } as AdminProduct;
 }
 
 export async function updateProduct(id: string, patch: Partial<Omit<AdminProduct, 'id'>>) {

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { todayLocal } from '@/actions/report-actions';
+import { parseDate, presetRange, PRESETS, type PresetId } from '@/lib/date-range';
 import { getSalesAnalytics, type Analytics } from '@/actions/analytics-actions';
 import { BarList, ColumnChart, KpiTile, money } from '@/components/admin/analytics/charts';
 
@@ -19,50 +20,15 @@ const PAYMENT_LABELS: Record<string, string> = {
 
 const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
-// --- Fechas en hora local (YYYY-MM-DD) ---
-const iso = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-const parse = (s: string) => {
-  const [y, m, d] = s.split('-').map(Number);
-  return new Date(y, m - 1, d);
-};
-
-type PresetId = 'today' | '7d' | '30d' | 'month' | 'prev-month';
-
-const PRESETS: { id: PresetId; label: string }[] = [
-  { id: 'today', label: 'Hoy' },
-  { id: '7d', label: 'Últimos 7 días' },
-  { id: '30d', label: 'Últimos 30 días' },
-  { id: 'month', label: 'Este mes' },
-  { id: 'prev-month', label: 'Mes anterior' },
-];
-
-function presetRange(id: PresetId): [string, string] {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  switch (id) {
-    case 'today':
-      return [iso(today), iso(today)];
-    case '7d':
-      return [iso(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6)), iso(today)];
-    case '30d':
-      return [iso(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29)), iso(today)];
-    case 'month':
-      return [iso(new Date(today.getFullYear(), today.getMonth(), 1)), iso(today)];
-    case 'prev-month':
-      return [
-        iso(new Date(today.getFullYear(), today.getMonth() - 1, 1)),
-        iso(new Date(today.getFullYear(), today.getMonth(), 0)),
-      ];
-  }
-}
+const parse = parseDate;
 
 const shortDate = (s: string) =>
   parse(s).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
 
 const longDate = (s: string) =>
   parse(s).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+
+const signedMoney = (n: number) => (n < 0 ? `−${money(-n)}` : money(n));
 
 const pct = (part: number, total: number) =>
   total > 0 ? `${Math.round((part / total) * 100)}%` : '0%';
@@ -253,6 +219,9 @@ export default function SalesAnalytics() {
             />
           </div>
 
+          {/* Resultado */}
+          <ResultSection data={data} />
+
           {Number(data.kpis.orders) === 0 ? (
             <p className="rounded-xl border bg-white p-6 text-center text-slate-600">
               No hay mesas cobradas en este período. Prueba con un rango más amplio.
@@ -336,5 +305,120 @@ export default function SalesAnalytics() {
         </div>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Resultado: ventas menos gastos, y margen por producto según su costo
+
+function ResultSection({ data }: { data: Analytics }) {
+  const sales = Number(data.kpis.sales);
+  const prevSales = Number(data.previous.sales);
+  const expenses = Number(data.expenses?.total ?? 0);
+  const prevExpenses = Number(data.expenses?.previous ?? 0);
+  const result = sales - expenses;
+  const prevResult = prevSales - prevExpenses;
+  const marginOnSales = sales > 0 ? (result / sales) * 100 : 0;
+  const prevMarginOnSales = prevSales > 0 ? (prevResult / prevSales) * 100 : 0;
+  const coverage = data.cost_coverage == null ? null : Math.round(Number(data.cost_coverage) * 100);
+  const margins = data.margins ?? [];
+
+  const categories = (data.expenses?.by_category ?? []).map((c) => ({
+    key: c.category,
+    label: c.category,
+    sublabel: `· ${c.count} ${Number(c.count) === 1 ? 'gasto' : 'gastos'}`,
+    value: Number(c.total),
+    valueText: `${money(Number(c.total))} (${pct(Number(c.total), expenses)})`,
+  }));
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-800">Resultado del período</h2>
+        <p className="text-sm text-slate-500">
+          Ventas cobradas menos los gastos registrados en el mismo período.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <KpiTile
+          label="Gastos"
+          value={money(expenses)}
+          current={expenses}
+          previous={prevExpenses}
+          higherIsBetter={false}
+        />
+        <KpiTile
+          label="Resultado (ventas − gastos)"
+          value={signedMoney(result)}
+          current={result}
+          previous={prevResult}
+        />
+        <KpiTile
+          label="Resultado sobre ventas"
+          value={sales > 0 ? `${Math.round(marginOnSales)}%` : 'Sin ventas'}
+          current={marginOnSales}
+          previous={prevMarginOnSales}
+        />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <BarList title="Gastos por categoría" items={categories} emptyText="No hay gastos cargados en este período." />
+
+        <section className="rounded-xl border bg-white p-5 space-y-3">
+          <h2 className="font-semibold text-slate-800">Margen por producto</h2>
+          {margins.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              Todavía no hay productos vendidos con costo cargado. Cárgalo en Administración › Productos y
+              categorías, con el botón “Editar” de cada producto.
+            </p>
+          ) : (
+            <>
+              <div className="max-h-80 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-white">
+                    <tr className="text-left text-slate-500 border-b">
+                      <th className="py-2 font-medium">Producto</th>
+                      <th className="py-2 font-medium text-right">Unid.</th>
+                      <th className="py-2 font-medium text-right">Ventas</th>
+                      <th className="py-2 font-medium text-right">Costo</th>
+                      <th className="py-2 font-medium text-right">Ganancia</th>
+                      <th className="py-2 font-medium text-right">Margen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {margins.map((m, i) => {
+                      const revenue = Number(m.revenue);
+                      const margin = Number(m.margin);
+                      return (
+                        <tr key={`${m.name}-${i}`} className="border-b last:border-0">
+                          <td className="py-2 text-slate-800">{m.name}</td>
+                          <td className="py-2 text-right tabular-nums">{Number(m.qty)}</td>
+                          <td className="py-2 text-right tabular-nums">{money(revenue)}</td>
+                          <td className="py-2 text-right tabular-nums">{money(Number(m.cost))}</td>
+                          <td className="py-2 text-right tabular-nums">{signedMoney(margin)}</td>
+                          <td className="py-2 text-right tabular-nums">
+                            {revenue > 0 ? `${Math.round((margin / revenue) * 100)}%` : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {coverage != null && (
+                <p className="text-xs text-slate-500">
+                  {coverage}% de lo vendido tiene costo cargado. El margen usa el costo actual de cada producto.
+                </p>
+              )}
+            </>
+          )}
+          <p className="text-xs text-slate-500">
+            Este margen es informativo y no se resta del resultado, porque las compras de insumos ya figuran en
+            los gastos.
+          </p>
+        </section>
+      </div>
+    </section>
   );
 }

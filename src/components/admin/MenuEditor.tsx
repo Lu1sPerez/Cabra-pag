@@ -25,6 +25,16 @@ function parsePrice(raw: string) {
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
 }
 
+// Costo opcional: vacío = sin cargar; acepta cero
+function parseCost(raw: string): number | null | 'invalid' {
+  if (!raw.trim()) return null;
+  const clean = raw.trim().replace(/\./g, '').replace(',', '.');
+  const n = Number(clean);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : 'invalid';
+}
+
+const marginPct = (price: number, cost: number) => Math.round(((price - cost) / price) * 100);
+
 const inputClass =
   'rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 
@@ -160,13 +170,18 @@ export default function MenuEditor() {
     run(() => updateProduct(p.id, { is_active: !p.is_active }));
   };
 
-  const handleSaveEdit = (p: AdminProduct, draft: { name: string; price: string; category_id: string }) => {
+  const handleSaveEdit = (
+    p: AdminProduct,
+    draft: { name: string; price: string; cost: string; category_id: string }
+  ) => {
     const name = draft.name.trim();
     const price = parsePrice(draft.price);
+    const cost = parseCost(draft.cost);
     if (!name) return setError('El nombre no puede quedar vacío.');
     if (price === null) return setError('Ingresa un precio válido, mayor a cero.');
+    if (cost === 'invalid') return setError('Ingresa un costo válido, o déjalo vacío.');
 
-    const patch = { name, price, category_id: draft.category_id };
+    const patch = { name, price, cost, category_id: draft.category_id };
     run(async () => {
       await updateProduct(p.id, patch);
       setProducts((prev) =>
@@ -187,6 +202,7 @@ export default function MenuEditor() {
           <h1 className="text-2xl font-bold text-slate-800">Productos y categorías</h1>
           <p className="text-sm text-slate-500">
             Los productos desactivados no aparecen al tomar pedidos, pero siguen en el historial.
+            Carga el costo de cada producto con “Editar” para ver su margen en el análisis.
           </p>
         </div>
         <span className="text-sm text-slate-500" aria-live="polite">
@@ -362,9 +378,14 @@ export default function MenuEditor() {
                       {searching && <p className="text-xs text-slate-500">{catName(p.category_id)}</p>}
                     </div>
 
-                    <span className={cn('w-24 text-right font-semibold text-slate-900', !p.is_active && 'opacity-50')}>
-                      {money(p.price)}
-                    </span>
+                    <div className={cn('w-36 text-right', !p.is_active && 'opacity-50')}>
+                      <p className="font-semibold text-slate-900">{money(p.price)}</p>
+                      <p className="text-xs text-slate-500">
+                        {p.cost == null
+                          ? 'Sin costo cargado'
+                          : `Costo ${money(p.cost)} · margen ${marginPct(p.price, p.cost)}%`}
+                      </p>
+                    </div>
 
                     <button
                       type="button"
@@ -424,10 +445,11 @@ function EditRow({
   categories: AdminCategory[];
   saving: boolean;
   onCancel: () => void;
-  onSave: (draft: { name: string; price: string; category_id: string }) => void;
+  onSave: (draft: { name: string; price: string; cost: string; category_id: string }) => void;
 }) {
   const [name, setName] = useState(product.name);
   const [price, setPrice] = useState(String(product.price).replace('.', ','));
+  const [cost, setCost] = useState(product.cost == null ? '' : String(product.cost).replace('.', ','));
   const [categoryId, setCategoryId] = useState(product.category_id);
 
   return (
@@ -435,7 +457,7 @@ function EditRow({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          onSave({ name, price, category_id: categoryId });
+          onSave({ name, price, cost, category_id: categoryId });
         }}
         onKeyDown={(e) => e.key === 'Escape' && onCancel()}
         className="flex flex-wrap items-center gap-2"
@@ -452,6 +474,14 @@ function EditRow({
           onChange={(e) => setPrice(e.target.value)}
           inputMode="decimal"
           aria-label="Precio"
+          className={cn(inputClass, 'w-28')}
+        />
+        <input
+          value={cost}
+          onChange={(e) => setCost(e.target.value)}
+          inputMode="decimal"
+          placeholder="Costo"
+          aria-label="Costo unitario (opcional)"
           className={cn(inputClass, 'w-28')}
         />
         <select

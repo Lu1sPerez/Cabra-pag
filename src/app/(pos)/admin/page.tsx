@@ -7,6 +7,11 @@ const SECTIONS = [
     description: 'Ventas, horarios, productos, mozos y medios de pago.',
   },
   {
+    href: '/admin/gastos',
+    title: 'Gastos',
+    description: 'Compras, alquiler y demás salidas de dinero, por categoría.',
+  },
+  {
     href: '/admin/plano',
     title: 'Plano del salón',
     description: 'Zonas, mesas y su ubicación en el local.',

@@ -21,6 +21,13 @@ export type Analytics = {
   staff: { name: string; orders: number; sales: number; avg_ticket: number }[];
   payments: { method: string; orders: number; sales: number }[];
   manager_access: { name: string; count: number; last: string }[];
+  expenses: {
+    total: number;
+    previous: number;
+    by_category: { category: string; total: number; count: number }[];
+  };
+  margins: { name: string; qty: number; revenue: number; cost: number; margin: number }[];
+  cost_coverage: number | null;
 };
 
 export async function getSalesAnalytics(from: string, to: string) {
