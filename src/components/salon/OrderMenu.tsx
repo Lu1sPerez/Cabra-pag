@@ -413,7 +413,7 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
                 onClick={handleSendToKitchen}
               >
                 <Send size={20} />
-                {working && cart.length > 0 ? 'Enviando…' : 'Enviar a cocina'}
+                {working && cart.length > 0 ? 'Enviando…' : 'Enviar comanda'}
               </Button>
 
               {hasSentItems && cart.length === 0 && (
