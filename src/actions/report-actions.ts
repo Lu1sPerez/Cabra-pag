@@ -5,6 +5,8 @@ export type ClosedOrder = {
   id: string;
   total: number | null;
   payment_method: string | null;
+  discount: number | null;
+  discount_reason: string | null;
   paid_at: string;
   tables: { name: string } | null;
   closer: { name: string } | null;
