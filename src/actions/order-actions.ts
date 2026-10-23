@@ -105,12 +105,20 @@ export async function cancelBillRequest(tableId: string, staffToken: string | nu
   if (error) throw error;
 }
 
-export async function payOrder(tableId: string, method: PaymentMethod, staffToken: string | null) {
+export async function payOrder(
+  tableId: string,
+  method: PaymentMethod,
+  staffToken: string | null,
+  discount = 0,
+  discountReason: string | null = null
+) {
   const supabase = createClient();
   const { data, error } = await supabase.rpc('pay_order', {
     p_table_id: tableId,
     p_payment_method: method,
     p_staff_token: staffToken,
+    p_discount: discount,
+    p_discount_reason: discountReason,
   });
 
   if (error) throw error;
