@@ -176,11 +176,11 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
       setTable((t) => (t ? { ...t, status: 'occupied' } : t));
     }, 'Mesa reabierta. Ya puedes agregar productos.');
 
-  const handlePay = async (method: PaymentMethod) => {
+  const handlePay = async (method: PaymentMethod, discount: number, discountReason: string | null) => {
     setWorking(true);
     setPayError(null);
     try {
-      await payOrder(tableId, method, staffToken);
+      await payOrder(tableId, method, staffToken, discount, discountReason);
       router.push('/');
     } catch (e: any) {
       console.error(e);
