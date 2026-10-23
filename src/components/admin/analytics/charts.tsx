@@ -2,8 +2,8 @@
 
 import { cn } from '@/lib/utils';
 
-// Color de la serie única de cada gráfico y su versión clara para el fondo de las barras
-const SERIES = '#2a78d6';
+// Color de la serie única de cada gráfico (color principal del local)
+const SERIES = '#496275';
 
 export const money = (n: number) =>
   `$${Math.round(n).toLocaleString('es-AR')}`;
