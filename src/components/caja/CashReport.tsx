@@ -65,6 +65,8 @@ export default function CashReport() {
 
   const summary = useMemo(() => {
     const total = orders.reduce((acc, o) => acc + Number(o.total ?? 0), 0);
+    const discounts = orders.reduce((acc, o) => acc + Number(o.discount ?? 0), 0);
+    const discountCount = orders.filter((o) => Number(o.discount ?? 0) > 0).length;
 
     const byMethod = METHODS.map((m) => {
       const list = orders.filter((o) => o.payment_method === m.id);
@@ -95,6 +97,8 @@ export default function CashReport() {
       total,
       count: orders.length,
       average: orders.length ? total / orders.length : 0,
+      discounts,
+      discountCount,
       byMethod,
       topProducts,
     };
@@ -160,6 +164,12 @@ export default function CashReport() {
               <CardContent className="p-5">
                 <p className="text-sm text-slate-500">Total vendido</p>
                 <p className="text-3xl font-bold text-slate-900 mt-1">{money(summary.total)}</p>
+                {summary.discounts > 0 && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Ya descontados {money(summary.discounts)} en {summary.discountCount}{' '}
+                    {summary.discountCount === 1 ? 'cobro' : 'cobros'}
+                  </p>
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -305,6 +315,7 @@ export default function CashReport() {
                           <th className="py-2 font-medium">Mesa</th>
                           <th className="py-2 font-medium">Cobró</th>
                           <th className="py-2 font-medium">Medio de pago</th>
+                          <th className="py-2 font-medium text-right">Descuento</th>
                           <th className="py-2 font-medium text-right">Total</th>
                         </tr>
                       </thead>
@@ -321,6 +332,18 @@ export default function CashReport() {
                             <td className="py-2">{o.closer?.name ?? 'Admin'}</td>
                             <td className="py-2">
                               {METHODS.find((m) => m.id === o.payment_method)?.label ?? 'Sin dato'}
+                            </td>
+                            <td className="py-2 text-right text-slate-600" title={o.discount_reason ?? undefined}>
+                              {Number(o.discount ?? 0) > 0 ? (
+                                <>
+                                  −{money(Number(o.discount))}
+                                  {o.discount_reason && (
+                                    <span className="block text-xs text-slate-500">{o.discount_reason}</span>
+                                  )}
+                                </>
+                              ) : (
+                                '—'
+                              )}
                             </td>
                             <td className="py-2 text-right font-medium">
                               {money(Number(o.total ?? 0))}
