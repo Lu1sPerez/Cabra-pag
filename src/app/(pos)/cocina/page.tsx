@@ -13,3 +13,5 @@ export default function CocinaPage() {
     </main>
   );
 }
+
+
