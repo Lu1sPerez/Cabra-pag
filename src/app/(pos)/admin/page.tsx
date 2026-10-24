@@ -2,6 +2,11 @@ import Link from 'next/link';
 
 const SECTIONS = [
   {
+    href: '/admin/asistente',
+    title: 'Asistente',
+    description: 'Pregúntale a la IA por ventas, gastos y el estado del salón.',
+  },
+  {
     href: '/admin/analisis',
     title: 'Análisis de ventas',
     description: 'Ventas, horarios, productos, mozos y medios de pago.',
