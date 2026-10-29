@@ -46,6 +46,8 @@ const config: Config = {
       },
       fontFamily: {
         sans: ['Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        // Títulos y montos grandes
+        display: ['"Bricolage Grotesque"', 'Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       borderColor: {
         DEFAULT: warmNeutral[200],

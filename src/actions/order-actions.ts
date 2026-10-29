@@ -19,7 +19,31 @@ export type SentItem = {
 export type OpenOrder = {
   id: string;
   total: number | null;
+  discount: number | null;
+  discount_reason: string | null;
+  created_at: string;
   order_items: SentItem[];
+};
+
+export type OrderPayment = {
+  id: string;
+  method_name: string;
+  base_amount: number;
+  adjustment: number;
+  amount: number;
+  cash_given: number | null;
+  items: { id: string; qty: number }[] | null;
+  paid_at: string;
+};
+
+export type PaymentResult = {
+  order_id: string;
+  payment_id: string;
+  charged: number;
+  adjustment: number;
+  change: number | null;
+  remaining: number;
+  closed: boolean;
 };
 
 export type NewItem = { product_id: string; quantity: number; notes: string | null };
@@ -63,7 +87,7 @@ export async function getOpenOrder(tableId: string) {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('orders')
-    .select('id, total, order_items ( id, quantity, notes, status, unit_price, products ( name ) )')
+    .select('id, total, discount, discount_reason, created_at, order_items ( id, quantity, notes, status, unit_price, products ( name ) )')
     .eq('table_id', tableId)
     .eq('status', 'open')
     .order('created_at', { ascending: false })
@@ -123,4 +147,78 @@ export async function payOrder(
 
   if (error) throw error;
   return data as string;
+}
+
+// --- Cobro en partes -------------------------------------------------------
+
+export async function getOrderPayments(orderId: string) {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('payments')
+    .select('id, method_name, base_amount, adjustment, amount, cash_given, items, paid_at')
+    .eq('order_id', orderId)
+    .order('paid_at');
+  if (error) throw error;
+  return (data ?? []).map((p: any) => ({
+    ...p,
+    base_amount: Number(p.base_amount),
+    adjustment: Number(p.adjustment),
+    amount: Number(p.amount),
+    cash_given: p.cash_given == null ? null : Number(p.cash_given),
+  })) as OrderPayment[];
+}
+
+export async function applyDiscount(tableId: string, discount: number, reason: string | null, staffToken: string | null) {
+  const supabase = createClient();
+  const { error } = await supabase.rpc('apply_discount', {
+    p_table_id: tableId,
+    p_discount: discount,
+    p_reason: reason,
+    p_staff_token: staffToken,
+  });
+  if (error) throw error;
+}
+
+export async function registerPayment(input: {
+  tableId: string;
+  methodId: string;
+  baseAmount: number | null;
+  staffToken: string | null;
+  cashGiven?: number | null;
+  items?: { id: string; qty: number }[] | null;
+}) {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('register_payment', {
+    p_table_id: input.tableId,
+    p_method_id: input.methodId,
+    p_base_amount: input.baseAmount,
+    p_staff_token: input.staffToken,
+    p_cash_given: input.cashGiven ?? null,
+    p_items: input.items && input.items.length ? input.items : null,
+  });
+  if (error) throw error;
+  const r = data as any;
+  return {
+    ...r,
+    charged: Number(r.charged),
+    adjustment: Number(r.adjustment),
+    change: r.change == null ? null : Number(r.change),
+    remaining: Number(r.remaining),
+  } as PaymentResult;
+}
+
+export async function voidPayment(paymentId: string, staffToken: string | null) {
+  const supabase = createClient();
+  const { error } = await supabase.rpc('void_payment', { p_payment_id: paymentId, p_staff_token: staffToken });
+  if (error) throw error;
+}
+
+// Mesas abiertas con su consumo, para el salón
+export type OpenOrderSummary = { table_id: string; total: number; created_at: string };
+
+export async function getOpenOrdersSummary() {
+  const supabase = createClient();
+  const { data, error } = await supabase.from('orders').select('table_id, total, created_at').eq('status', 'open');
+  if (error) throw error;
+  return (data ?? []).map((o: any) => ({ ...o, total: Number(o.total ?? 0) })) as OpenOrderSummary[];
 }

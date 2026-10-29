@@ -7,6 +7,16 @@ export type ClosedOrder = {
   payment_method: string | null;
   discount: number | null;
   discount_reason: string | null;
+  adjustments: number | null;
+  payments: {
+    method: string;
+    amount: number;
+    adjustment: number;
+    counts_as_cash: boolean;
+    cash_given: number | null;
+    paid_at: string;
+    staff: string | null;
+  }[];
   paid_at: string;
   tables: { name: string } | null;
   closer: { name: string } | null;
