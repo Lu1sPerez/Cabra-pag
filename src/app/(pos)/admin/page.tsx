@@ -2,6 +2,11 @@ import Link from 'next/link';
 
 const SECTIONS = [
   {
+    href: '/admin/medios-pago',
+    title: 'Medios de pago',
+    description: 'Efectivo, tarjetas, billeteras y transferencias, con recargos o descuentos.',
+  },
+  {
     href: '/admin/asistente',
     title: 'Asistente',
     description: 'Pregúntale a la IA por ventas, gastos y el estado del salón.',
@@ -36,14 +41,8 @@ const SECTIONS = [
 export default function AdminPage() {
   return (
     <main className="min-h-screen bg-slate-50">
-      <header className="h-16 bg-white border-b px-4 flex items-center">
-        <Link href="/" className="text-sm font-medium text-slate-600 hover:text-slate-900 hover:underline">
-          Volver al salón
-        </Link>
-      </header>
-
-      <div className="max-w-3xl mx-auto p-6 space-y-4">
-        <h1 className="text-2xl font-bold text-slate-800">Administración</h1>
+      <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-4">
+        <h1 className="font-display text-4xl font-extrabold tracking-tight text-slate-900 leading-none">Ajustes</h1>
 
         <div className="grid gap-4 sm:grid-cols-2">
           {SECTIONS.map((s) => (
@@ -52,7 +51,7 @@ export default function AdminPage() {
               href={s.href}
               className="rounded-xl border bg-white p-5 hover:border-blue-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
-              <h2 className="font-semibold text-slate-800">{s.title}</h2>
+              <h2 className="font-display text-lg font-bold text-slate-900">{s.title}</h2>
               <p className="text-sm text-slate-500 mt-1">{s.description}</p>
             </Link>
           ))}
