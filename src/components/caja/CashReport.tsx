@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Printer } from 'lucide-react';
+import { Printer, Receipt } from 'lucide-react';
+import { downloadTicket, type TicketData } from '@/lib/ticket';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -13,12 +14,7 @@ import {
   type ClosedOrder,
 } from '@/actions/report-actions';
 
-const METHODS: { id: string; label: string }[] = [
-  { id: 'cash', label: 'Efectivo' },
-  { id: 'card', label: 'Tarjeta' },
-  { id: 'mercadopago', label: 'MercadoPago' },
-  { id: 'transfer', label: 'Transferencia' },
-];
+
 
 const money = (n: number) =>
   `$${n.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
@@ -68,14 +64,17 @@ export default function CashReport() {
     const discounts = orders.reduce((acc, o) => acc + Number(o.discount ?? 0), 0);
     const discountCount = orders.filter((o) => Number(o.discount ?? 0) > 0).length;
 
-    const byMethod = METHODS.map((m) => {
-      const list = orders.filter((o) => o.payment_method === m.id);
-      return {
-        ...m,
-        count: list.length,
-        amount: list.reduce((acc, o) => acc + Number(o.total ?? 0), 0),
-      };
-    });
+    // Se suma cada pago: una mesa pagada mitad en efectivo y mitad con tarjeta cuenta en los dos
+    const methodMap = new Map<string, { id: string; label: string; count: number; amount: number }>();
+    let cashSales = 0;
+    for (const o of orders) {
+      for (const p of o.payments ?? []) {
+        const prev = methodMap.get(p.method) ?? { id: p.method, label: p.method, count: 0, amount: 0 };
+        methodMap.set(p.method, { ...prev, count: prev.count + 1, amount: prev.amount + Number(p.amount) });
+        if (p.counts_as_cash) cashSales += Number(p.amount);
+      }
+    }
+    const byMethod = Array.from(methodMap.values()).sort((a, b) => b.amount - a.amount);
 
     const products = new Map<string, { qty: number; amount: number }>();
     for (const o of orders) {
@@ -100,11 +99,33 @@ export default function CashReport() {
       discounts,
       discountCount,
       byMethod,
+      cashSales,
       topProducts,
     };
   }, [orders]);
 
-  const cashSales = summary.byMethod.find((m) => m.id === 'cash')?.amount ?? 0;
+  const cashSales = summary.cashSales;
+
+  const ticketFor = (o: ClosedOrder): TicketData => ({
+    kind: 'receipt',
+    orderId: o.id,
+    tableName: o.tables?.name ?? 'Mesa',
+    date: new Date(o.paid_at),
+    staffNames: Array.from(new Set((o.payments ?? []).map((p) => p.staff ?? '').filter(Boolean))),
+    items: o.order_items.map((it) => ({
+      name: it.products?.name ?? 'Producto',
+      qty: it.quantity,
+      unitPrice: Number(it.unit_price ?? 0),
+    })),
+    discount: Number(o.discount ?? 0),
+    discountReason: o.discount_reason,
+    payments: (o.payments ?? []).map((p) => ({
+      method: p.method,
+      amount: Number(p.amount),
+      adjustment: Number(p.adjustment),
+      cashGiven: p.cash_given == null ? null : Number(p.cash_given),
+    })),
+  });
   const expectedCash = Number(initialCash || 0) + cashSales;
   const difference = Number(countedCash || 0) - expectedCash;
   const isToday = date === todayLocal();
@@ -317,6 +338,9 @@ export default function CashReport() {
                           <th className="py-2 font-medium">Medio de pago</th>
                           <th className="py-2 font-medium text-right">Descuento</th>
                           <th className="py-2 font-medium text-right">Total</th>
+                          <th className="py-2 font-medium text-right print:hidden">
+                            <span className="sr-only">Ticket</span>
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -331,7 +355,9 @@ export default function CashReport() {
                             <td className="py-2">{o.tables?.name ?? '—'}</td>
                             <td className="py-2">{o.closer?.name ?? 'Admin'}</td>
                             <td className="py-2">
-                              {METHODS.find((m) => m.id === o.payment_method)?.label ?? 'Sin dato'}
+                              {(o.payments ?? []).length === 0
+                                ? 'Sin dato'
+                                : (o.payments ?? []).map((p) => p.method).filter((v, i, a) => a.indexOf(v) === i).join(' + ')}
                             </td>
                             <td className="py-2 text-right text-slate-600" title={o.discount_reason ?? undefined}>
                               {Number(o.discount ?? 0) > 0 ? (
@@ -347,6 +373,16 @@ export default function CashReport() {
                             </td>
                             <td className="py-2 text-right font-medium">
                               {money(Number(o.total ?? 0))}
+                            </td>
+                            <td className="py-2 pl-2 text-right print:hidden">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => downloadTicket(ticketFor(o))}
+                                aria-label={`Descargar ticket de ${o.tables?.name ?? 'la mesa'}`}
+                              >
+                                <Receipt size={16} aria-hidden="true" />
+                              </Button>
                             </td>
                           </tr>
                         ))}
