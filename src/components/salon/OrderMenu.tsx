@@ -440,3 +440,4 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
     </div>
   );
 }
+
