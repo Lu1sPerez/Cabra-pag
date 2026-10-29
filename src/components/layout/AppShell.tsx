@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3,
   Coffee,
+  History,
   LayoutGrid,
   Lock,
   LogOut,
@@ -25,6 +26,7 @@ type NavItem = { href: string; label: string; icon: typeof LayoutGrid; show: 'al
 const NAV: NavItem[] = [
   { href: '/', label: 'Salón', icon: LayoutGrid, show: 'all' },
   { href: '/caja', label: 'Caja', icon: Wallet, show: 'manager' },
+  { href: '/admin/ventas', label: 'Ventas', icon: History, show: 'admin' },
   { href: '/admin/analisis', label: 'Análisis', icon: BarChart3, show: 'admin' },
   { href: '/admin/asistente', label: 'Asistente', icon: MessageCircle, show: 'admin' },
   { href: '/admin/gastos', label: 'Gastos', icon: ReceiptText, show: 'admin' },

@@ -2,6 +2,11 @@ import Link from 'next/link';
 
 const SECTIONS = [
   {
+    href: '/admin/ventas',
+    title: 'Historial de ventas',
+    description: 'Cada mesa cobrada: qué consumió, quién atendió, cómo pagó y su ticket.',
+  },
+  {
     href: '/admin/medios-pago',
     title: 'Medios de pago',
     description: 'Efectivo, tarjetas, billeteras y transferencias, con recargos o descuentos.',
