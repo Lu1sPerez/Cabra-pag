@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, Minus, Plus, Receipt, Search, Send, Trash2 } from 'lucide-react';
@@ -9,8 +9,11 @@ import { cn } from '@/lib/utils';
 import PaymentPanel from '@/components/salon/PaymentPanel';
 import { isStaffSessionError, useStaff } from '@/components/auth/StaffProvider';
 import { shareTicket } from '@/lib/ticket';
+import { createClient } from '@/lib/supabase/browser';
+import { useResync } from '@/hooks/useResync';
 import {
   cancelBillRequest,
+  getCachedMenu,
   getMenu,
   getOpenOrder,
   getTable,
@@ -33,6 +36,13 @@ const ITEM_STATUS: Record<string, { label: string; className: string }> = {
 
 const money = (n: number) => `$ ${n.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
 
+// Búsqueda sin importar mayúsculas ni tildes ("cafe" encuentra "Café")
+const normalize = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
 function elapsed(fromIso: string | undefined) {
   if (!fromIso) return '';
   const min = Math.max(0, Math.floor((Date.now() - new Date(fromIso).getTime()) / 60000));
@@ -45,9 +55,9 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
   const { staff, lock } = useStaff();
   const staffToken = staff?.token ?? null;
 
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [categories, setCategories] = useState<Category[]>(() => getCachedMenu()?.categories ?? []);
+  const [products, setProducts] = useState<Product[]>(() => getCachedMenu()?.products ?? []);
+  const [activeCategory, setActiveCategory] = useState<string | null>(() => getCachedMenu()?.categories[0]?.id ?? null);
   const [search, setSearch] = useState('');
   const [table, setTable] = useState<TableInfo | null>(null);
   const [openOrder, setOpenOrder] = useState<OpenOrder | null>(null);
@@ -59,19 +69,53 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
   const [payOpen, setPayOpen] = useState(false);
   const [, setTick] = useState(0);
 
+  // Evita que un doble toque envíe la comanda o cobre dos veces
+  const busyRef = useRef(false);
+  const payOpenRef = useRef(false);
+  useEffect(() => {
+    payOpenRef.current = payOpen;
+  }, [payOpen]);
+
   const refreshOrder = useCallback(async () => {
     setOpenOrder(await getOpenOrder(tableId));
   }, [tableId]);
 
+  // Mesa y comanda actualizadas (cambios hechos desde otro dispositivo)
+  const refreshTableAndOrder = useCallback(async () => {
+    // Durante el cobro no se toca: el panel muestra el resultado aunque la mesa ya se haya cerrado
+    if (payOpenRef.current || busyRef.current) return;
+    try {
+      const [t, order] = await Promise.all([getTable(tableId), getOpenOrder(tableId)]);
+      if (payOpenRef.current || busyRef.current) return;
+      setTable(t);
+      setOpenOrder(order);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [tableId]);
+
   useEffect(() => {
     let active = true;
+    const cached = getCachedMenu();
+
+    // El menú se pide siempre (por si cambió un precio); si ya estaba en memoria, la mesa no lo espera
+    const menuPromise = getMenu().then((menu) => {
+      if (!active) return;
+      setCategories(menu.categories);
+      setProducts(menu.products);
+      setActiveCategory((current) =>
+        current && menu.categories.some((c) => c.id === current) ? current : menu.categories[0]?.id ?? null
+      );
+    });
+
     (async () => {
       try {
-        const [menu, t, order] = await Promise.all([getMenu(), getTable(tableId), getOpenOrder(tableId)]);
+        const [t, order] = await Promise.all([
+          getTable(tableId),
+          getOpenOrder(tableId),
+          cached ? Promise.resolve() : menuPromise,
+        ]);
         if (!active) return;
-        setCategories(menu.categories);
-        setProducts(menu.products);
-        setActiveCategory(menu.categories[0]?.id ?? null);
         setTable(t);
         setOpenOrder(order);
       } catch (e) {
@@ -81,10 +125,39 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
         if (active) setLoading(false);
       }
     })();
+
+    if (cached) menuPromise.catch((e) => console.error(e));
+
     return () => {
       active = false;
     };
   }, [tableId]);
+
+  // Tiempo real de esta mesa: estado y comanda
+  useEffect(() => {
+    const supabase = createClient();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(refreshTableAndOrder, 300);
+    };
+    let subscribedOnce = false;
+    const channel = supabase
+      .channel(`mesa-${tableId}-${Math.random().toString(36).slice(2)}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tables', filter: `id=eq.${tableId}` }, schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `table_id=eq.${tableId}` }, schedule)
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return;
+        if (subscribedOnce) schedule();
+        subscribedOnce = true;
+      });
+    return () => {
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(channel);
+    };
+  }, [tableId, refreshTableAndOrder]);
+
+  useResync(refreshTableAndOrder);
 
   // Actualiza los minutos abiertos
   useEffect(() => {
@@ -97,8 +170,8 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
   const hasSentItems = sentItems.length > 0;
 
   const visibleProducts = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (q) return products.filter((p) => p.name.toLowerCase().includes(q));
+    const q = normalize(search.trim());
+    if (q) return products.filter((p) => normalize(p.name).includes(q));
     return products.filter((p) => p.category_id === activeCategory);
   }, [products, activeCategory, search]);
 
@@ -138,7 +211,8 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
   };
 
   const run = async (action: () => Promise<void>, okText?: string) => {
-    if (working) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
     setWorking(true);
     setFeedback(null);
     try {
@@ -149,6 +223,7 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
       if (sessionError(e)) return;
       setFeedback({ type: 'error', text: e?.message ?? 'Ocurrió un error inesperado.' });
     } finally {
+      busyRef.current = false;
       setWorking(false);
     }
   };

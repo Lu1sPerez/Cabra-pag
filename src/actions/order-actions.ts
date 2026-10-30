@@ -50,7 +50,17 @@ export type NewItem = { product_id: string; quantity: number; notes: string | nu
 
 export type PaymentMethod = 'cash' | 'card' | 'mercadopago' | 'transfer';
 
-export async function getMenu() {
+// El menú casi no cambia: se guarda en memoria para abrir las mesas al instante.
+// Cada vez que se abre una mesa se vuelve a pedir en segundo plano, así un
+// cambio de precio aparece enseguida.
+export type Menu = { categories: Category[]; products: Product[] };
+let menuCache: Menu | null = null;
+
+export function getCachedMenu() {
+  return menuCache;
+}
+
+export async function getMenu(): Promise<Menu> {
   const supabase = createClient();
 
   const [cats, prods] = await Promise.all([
@@ -65,10 +75,11 @@ export async function getMenu() {
   if (cats.error) throw cats.error;
   if (prods.error) throw prods.error;
 
-  return {
+  menuCache = {
     categories: (cats.data ?? []) as Category[],
     products: (prods.data ?? []).map((p) => ({ ...p, price: Number(p.price) })) as Product[],
   };
+  return menuCache;
 }
 
 export async function getTable(tableId: string) {

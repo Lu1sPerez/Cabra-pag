@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Download, Share2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -64,6 +64,8 @@ export default function PaymentPanel({
   const [payments, setPayments] = useState<OrderPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // Bloqueo inmediato: un doble toque no puede registrar dos pagos
+  const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -212,7 +214,8 @@ export default function PaymentPanel({
   };
 
   const pay = async () => {
-    if (!canPay || !method) return;
+    if (!canPay || !method || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -259,12 +262,15 @@ export default function PaymentPanel({
     } catch (e) {
       handleError(e);
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
 
   const cancelPayment = async (p: OrderPayment) => {
+    if (busyRef.current) return;
     if (!window.confirm(`¿Anular el pago de ${money(p.amount)} con ${p.method_name}?`)) return;
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -274,6 +280,7 @@ export default function PaymentPanel({
     } catch (e) {
       handleError(e);
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };

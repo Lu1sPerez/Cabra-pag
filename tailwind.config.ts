@@ -45,9 +45,10 @@ const config: Config = {
         brand,
       },
       fontFamily: {
-        sans: ['Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        // Las variables las define next/font en src/app/layout.tsx
+        sans: ['var(--font-sans)', 'Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         // Títulos y montos grandes
-        display: ['"Bricolage Grotesque"', 'Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        display: ['var(--font-display)', '"Bricolage Grotesque"', 'var(--font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       borderColor: {
         DEFAULT: warmNeutral[200],

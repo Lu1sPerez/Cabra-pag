@@ -1,89 +1,235 @@
-'use client';
-
-import { useEffect, useRef, useState } from 'react';
+// Funciones de cliente (no son Server Actions): usan el cliente de navegador
+// para evitar los problemas de cookies()/AsyncLocalStorage en StackBlitz.
+// Las escrituras pasan por funciones de Postgres, que son atómicas.
 import { createClient } from '@/lib/supabase/browser';
-import { TABLE_FIELDS, type FloorTable, type FloorZone } from '@/lib/floor';
 
-export type { FloorTable, FloorZone, TableStatus } from '@/lib/floor';
+export type Category = { id: string; name: string };
+export type Product = { id: string; category_id: string; name: string; price: number };
+export type TableInfo = { id: string; name: string; status: string };
 
-export function useRealTimeTables() {
-  const [zones, setZones] = useState<FloorZone[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [connected, setConnected] = useState(false);
-  const zonesRef = useRef<FloorZone[]>([]);
+export type SentItem = {
+  id: string;
+  quantity: number;
+  notes: string | null;
+  status: string;
+  unit_price: number | null;
+  products: { name: string } | null;
+};
 
-  useEffect(() => {
-    zonesRef.current = zones;
-  }, [zones]);
+export type OpenOrder = {
+  id: string;
+  total: number | null;
+  discount: number | null;
+  discount_reason: string | null;
+  created_at: string;
+  order_items: SentItem[];
+};
 
-  useEffect(() => {
-    const supabase = createClient();
-    let active = true;
+export type OrderPayment = {
+  id: string;
+  method_name: string;
+  base_amount: number;
+  adjustment: number;
+  amount: number;
+  cash_given: number | null;
+  items: { id: string; qty: number }[] | null;
+  paid_at: string;
+};
 
-    async function load() {
-      const { data, error } = await supabase
-        .from('zones')
-        .select(`id, name, tables ( ${TABLE_FIELDS} )`)
-        .eq('is_active', true)
-        .eq('tables.is_active', true)
-        .order('name')
-        .order('name', { referencedTable: 'tables' });
+export type PaymentResult = {
+  order_id: string;
+  payment_id: string;
+  charged: number;
+  adjustment: number;
+  change: number | null;
+  remaining: number;
+  closed: boolean;
+};
 
-      if (!active) return;
+export type NewItem = { product_id: string; quantity: number; notes: string | null };
 
-      if (error) {
-        console.error('Error cargando zonas:', error);
-        setError('No se pudo cargar el salón. Revisa la conexión con Supabase y las políticas RLS.');
-      } else {
-        setError(null);
-        setZones((data ?? []) as unknown as FloorZone[]);
-      }
-      setLoading(false);
-    }
+export type PaymentMethod = 'cash' | 'card' | 'mercadopago' | 'transfer';
 
-    load();
+// El menú casi no cambia: se guarda en memoria para abrir las mesas al instante.
+// Cada vez que se abre una mesa se vuelve a pedir en segundo plano, así un
+// cambio de precio aparece enseguida.
+export type Menu = { categories: Category[]; products: Product[] };
+let menuCache: Menu | null = null;
 
-    const channel = supabase
-      .channel(`salon-tables-${Math.random().toString(36).slice(2)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, (payload) => {
-        if (payload.eventType !== 'UPDATE') {
-          load();
-          return;
-        }
+export function getCachedMenu() {
+  return menuCache;
+}
 
-        const updated = payload.new as FloorTable;
-        const inSameZone = zonesRef.current.some(
-          (z) => z.id === updated.zone_id && z.tables.some((t) => t.id === updated.id)
-        );
+export async function getMenu(): Promise<Menu> {
+  const supabase = createClient();
 
-        // Mesa nueva para esta vista, movida de zona o dada de baja: recarga completa
-        if (!inSameZone || updated.is_active === false) {
-          load();
-          return;
-        }
+  const [cats, prods] = await Promise.all([
+    supabase.from('categories').select('id, name').order('sort_order').order('name'),
+    supabase
+      .from('products')
+      .select('id, category_id, name, price')
+      .or('is_active.is.null,is_active.eq.true')
+      .order('name'),
+  ]);
 
-        // Cambio de estado, nombre, posición o tamaño: actualiza solo esa mesa
-        setZones((prev) =>
-          prev.map((z) => ({
-            ...z,
-            tables: z.tables.map((t) => (t.id === updated.id ? { ...t, ...updated } : t)),
-          }))
-        );
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'zones' }, () => {
-        load();
-      })
-      .subscribe((status) => {
-        if (!active) return;
-        setConnected(status === 'SUBSCRIBED');
-      });
+  if (cats.error) throw cats.error;
+  if (prods.error) throw prods.error;
 
-    return () => {
-      active = false;
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  menuCache = {
+    categories: (cats.data ?? []) as Category[],
+    products: (prods.data ?? []).map((p) => ({ ...p, price: Number(p.price) })) as Product[],
+  };
+  return menuCache;
+}
 
-  return { zones, loading, error, connected };
+export async function getTable(tableId: string) {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('tables')
+    .select('id, name, status')
+    .eq('id', tableId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as TableInfo | null;
+}
+
+export async function getOpenOrder(tableId: string) {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('orders')
+    .select('id, total, discount, discount_reason, created_at, order_items ( id, quantity, notes, status, unit_price, products ( name ) )')
+    .eq('table_id', tableId)
+    .eq('status', 'open')
+    .order('created_at', { ascending: false })
+    .order('created_at', { referencedTable: 'order_items' })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as unknown as OpenOrder | null;
+}
+
+export async function sendOrder(tableId: string, items: NewItem[], staffToken: string | null) {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('send_order', {
+    p_table_id: tableId,
+    p_items: items,
+    p_staff_token: staffToken,
+  });
+
+  if (error) throw error;
+  return data as string;
+}
+
+export async function requestBill(tableId: string, staffToken: string | null) {
+  const supabase = createClient();
+  const { error } = await supabase.rpc('request_bill', {
+    p_table_id: tableId,
+    p_staff_token: staffToken,
+  });
+  if (error) throw error;
+}
+
+export async function cancelBillRequest(tableId: string, staffToken: string | null) {
+  const supabase = createClient();
+  const { error } = await supabase.rpc('cancel_bill_request', {
+    p_table_id: tableId,
+    p_staff_token: staffToken,
+  });
+  if (error) throw error;
+}
+
+export async function payOrder(
+  tableId: string,
+  method: PaymentMethod,
+  staffToken: string | null,
+  discount = 0,
+  discountReason: string | null = null
+) {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('pay_order', {
+    p_table_id: tableId,
+    p_payment_method: method,
+    p_staff_token: staffToken,
+    p_discount: discount,
+    p_discount_reason: discountReason,
+  });
+
+  if (error) throw error;
+  return data as string;
+}
+
+// --- Cobro en partes -------------------------------------------------------
+
+export async function getOrderPayments(orderId: string) {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('payments')
+    .select('id, method_name, base_amount, adjustment, amount, cash_given, items, paid_at')
+    .eq('order_id', orderId)
+    .order('paid_at');
+  if (error) throw error;
+  return (data ?? []).map((p: any) => ({
+    ...p,
+    base_amount: Number(p.base_amount),
+    adjustment: Number(p.adjustment),
+    amount: Number(p.amount),
+    cash_given: p.cash_given == null ? null : Number(p.cash_given),
+  })) as OrderPayment[];
+}
+
+export async function applyDiscount(tableId: string, discount: number, reason: string | null, staffToken: string | null) {
+  const supabase = createClient();
+  const { error } = await supabase.rpc('apply_discount', {
+    p_table_id: tableId,
+    p_discount: discount,
+    p_reason: reason,
+    p_staff_token: staffToken,
+  });
+  if (error) throw error;
+}
+
+export async function registerPayment(input: {
+  tableId: string;
+  methodId: string;
+  baseAmount: number | null;
+  staffToken: string | null;
+  cashGiven?: number | null;
+  items?: { id: string; qty: number }[] | null;
+}) {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('register_payment', {
+    p_table_id: input.tableId,
+    p_method_id: input.methodId,
+    p_base_amount: input.baseAmount,
+    p_staff_token: input.staffToken,
+    p_cash_given: input.cashGiven ?? null,
+    p_items: input.items && input.items.length ? input.items : null,
+  });
+  if (error) throw error;
+  const r = data as any;
+  return {
+    ...r,
+    charged: Number(r.charged),
+    adjustment: Number(r.adjustment),
+    change: r.change == null ? null : Number(r.change),
+    remaining: Number(r.remaining),
+  } as PaymentResult;
+}
+
+export async function voidPayment(paymentId: string, staffToken: string | null) {
+  const supabase = createClient();
+  const { error } = await supabase.rpc('void_payment', { p_payment_id: paymentId, p_staff_token: staffToken });
+  if (error) throw error;
+}
+
+// Mesas abiertas con su consumo, para el salón
+export type OpenOrderSummary = { table_id: string; total: number; created_at: string };
+
+export async function getOpenOrdersSummary() {
+  const supabase = createClient();
+  const { data, error } = await supabase.from('orders').select('table_id, total, created_at').eq('status', 'open');
+  if (error) throw error;
+  return (data ?? []).map((o: any) => ({ ...o, total: Number(o.total ?? 0) })) as OpenOrderSummary[];
 }

@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/browser';
 import { useRealTimeTables } from '@/hooks/UseRealTimeTables';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { getOpenOrdersSummary, type OpenOrderSummary } from '@/actions/order-actions';
+import { getCachedMenu, getMenu, getOpenOrdersSummary, type OpenOrderSummary } from '@/actions/order-actions';
+import { useResync } from '@/hooks/useResync';
 import { CANVAS_GRID_STYLE, STATUS_LABELS, tableStyle, type FloorTable, type TableStatus } from '@/lib/floor';
 
 const STYLES: Record<TableStatus, string> = {
@@ -63,18 +64,36 @@ export default function TableGrid() {
     loadLive();
     const supabase = createClient();
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let subscribedOnce = false;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(loadLive, 400);
+    };
     const channel = supabase
       .channel(`salon-orders-${Math.random().toString(36).slice(2)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(loadLive, 400);
-      })
-      .subscribe();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, schedule)
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return;
+        if (subscribedOnce) schedule(); // reconexión: trae lo que cambió durante el corte
+        subscribedOnce = true;
+      });
     return () => {
       if (timer) clearTimeout(timer);
       supabase.removeChannel(channel);
     };
   }, [loadLive]);
+
+  // El iPad se despertó o volvió internet: hora y consumos al día
+  const resync = useCallback(() => {
+    setNow(Date.now());
+    loadLive();
+  }, [loadLive]);
+  useResync(resync);
+
+  // Deja el menú en memoria para que la primera mesa abra al instante
+  useEffect(() => {
+    if (!getCachedMenu()) getMenu().catch(() => {});
+  }, []);
 
   // Reloj y minutos
   useEffect(() => {

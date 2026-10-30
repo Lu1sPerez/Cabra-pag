@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Delete } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,8 +19,15 @@ export default function PinScreen() {
   const [options, setOptions] = useState<StaffOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<StaffOption | null>(null);
-  const [pin, setPin] = useState('');
+  const [pin, setPinState] = useState('');
   const [checking, setChecking] = useState(false);
+  // Copia inmediata del PIN y del estado: los toques rápidos no se pierden ni envían dos veces
+  const pinRef = useRef('');
+  const checkingRef = useRef(false);
+  const setPin = useCallback((value: string) => {
+    pinRef.current = value;
+    setPinState(value);
+  }, []);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,12 +42,14 @@ export default function PinScreen() {
 
   const submit = useCallback(
     async (value: string) => {
-      if (!selected) return;
+      if (!selected || checkingRef.current) return;
+      checkingRef.current = true;
       setChecking(true);
       setError(null);
       try {
         const result = await startStaffSession(selected.id, value);
         if (result.ok) {
+          checkingRef.current = false;
           setStaff(result.session);
           return;
         }
@@ -50,28 +59,26 @@ export default function PinScreen() {
         setError('No se pudo validar el PIN. Revisa la conexión.');
       }
       setPin('');
+      checkingRef.current = false;
       setChecking(false);
     },
-    [selected, setStaff]
+    [selected, setStaff, setPin]
   );
 
   const press = useCallback(
     (digit: string) => {
-      if (checking) return;
+      if (checkingRef.current || pinRef.current.length >= 4) return;
       setError(null);
-      setPin((prev) => {
-        if (prev.length >= 4) return prev;
-        const next = prev + digit;
-        if (next.length === 4) submit(next);
-        return next;
-      });
+      const next = pinRef.current + digit;
+      setPin(next);
+      if (next.length === 4) submit(next);
     },
-    [checking, submit]
+    [submit, setPin]
   );
 
   const erase = useCallback(() => {
-    if (!checking) setPin((p) => p.slice(0, -1));
-  }, [checking]);
+    if (!checkingRef.current) setPin(pinRef.current.slice(0, -1));
+  }, [setPin]);
 
   // Teclado físico
   useEffect(() => {
