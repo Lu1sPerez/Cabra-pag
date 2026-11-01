@@ -75,9 +75,15 @@ export async function getMenu(): Promise<Menu> {
   if (cats.error) throw cats.error;
   if (prods.error) throw prods.error;
 
+  const products = (prods.data ?? []).map((p) => ({ ...p, price: Number(p.price) })) as Product[];
+
+  // Solo las categorías con algún producto activo: una categoría con todo
+  // desactivado no aparece en el menú del mozo hasta que se active un producto
+  const withProducts = new Set(products.map((p) => p.category_id));
+
   menuCache = {
-    categories: (cats.data ?? []) as Category[],
-    products: (prods.data ?? []).map((p) => ({ ...p, price: Number(p.price) })) as Product[],
+    categories: ((cats.data ?? []) as Category[]).filter((c) => withProducts.has(c.id)),
+    products,
   };
   return menuCache;
 }
