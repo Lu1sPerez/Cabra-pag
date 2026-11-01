@@ -1,19 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { todayLocal } from '@/actions/report-actions';
 import { isoDate, parseDate, presetRange, PRESETS, type PresetId } from '@/lib/date-range';
 import { BarList, money } from '@/components/admin/analytics/charts';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { isStaffSessionError, useStaff } from '@/components/auth/StaffProvider';
 import {
-  createExpense,
-  deleteExpense,
-  getExpenseCategories,
-  getExpenses,
-  updateExpense,
-  type Expense,
+  listExpenseCategories,
+  listExpenses,
+  removeExpense,
+  saveExpense,
+  type ExpenseRow,
 } from '@/actions/expense-actions';
 
 const METHODS: { id: string; label: string }[] = [
@@ -45,6 +46,14 @@ function toTimestamp(date: string) {
 
 type Draft = { date: string; concept: string; category: string; amount: string; method: string };
 
+// El encargado carga gastos de hasta 7 días atrás (la base lo vuelve a controlar)
+const MANAGER_DAYS_BACK = 7;
+function minManagerDate() {
+  const d = new Date();
+  d.setDate(d.getDate() - MANAGER_DAYS_BACK);
+  return isoDate(d);
+}
+
 const emptyDraft = (): Draft => ({ date: todayLocal(), concept: '', category: 'Insumos', amount: '', method: 'cash' });
 
 function validate(d: Draft) {
@@ -55,9 +64,17 @@ function validate(d: Draft) {
 }
 
 export default function ExpensesEditor() {
-  const [preset, setPreset] = useState<PresetId | null>('month');
-  const [[from, to], setRange] = useState<[string, string]>(() => presetRange('month'));
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const { role } = useAuth();
+  const { staff, lock } = useStaff();
+  const isManager = role !== 'admin';
+  const staffToken = staff?.token ?? null;
+  const minDate = isManager ? minManagerDate() : undefined;
+
+  // El encargado arranca en "Hoy"; el admin, en el mes
+  const startPreset: PresetId = isManager ? 'today' : 'month';
+  const [preset, setPreset] = useState<PresetId | null>(startPreset);
+  const [[from, to], setRange] = useState<[string, string]>(() => presetRange(startPreset));
+  const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -70,22 +87,28 @@ export default function ExpensesEditor() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    const [rows, cats] = await Promise.all([getExpenses(from, to), getExpenseCategories()]);
+    const [rows, cats] = await Promise.all([listExpenses(from, to, staffToken), listExpenseCategories(staffToken)]);
     setExpenses(rows);
     setCategories(cats);
-  }, [from, to]);
+  }, [from, to, staffToken]);
 
   useEffect(() => {
     setLoading(true);
     reload()
       .catch((e) => {
         console.error(e);
-        setError('No se pudieron cargar los gastos. Revisa que hayas ejecutado 02a-estructura.sql.');
+        if (isStaffSessionError(e)) return lock();
+        setError('No se pudieron cargar los gastos. Revisa la conexión y que hayas ejecutado encargado-gastos.sql.');
       })
       .finally(() => setLoading(false));
-  }, [reload]);
+  }, [reload, lock]);
+
+  // Un doble toque en "Agregar" no carga el gasto dos veces
+  const busyRef = useRef(false);
 
   const run = async (action: () => Promise<void>, okText: string) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setSaving(true);
     setError(null);
     setOk(null);
@@ -95,8 +118,10 @@ export default function ExpensesEditor() {
       setOk(okText);
     } catch (e: any) {
       console.error(e);
+      if (isStaffSessionError(e)) return lock();
       setError(e?.message ?? 'Ocurrió un error inesperado.');
     } finally {
+      busyRef.current = false;
       setSaving(false);
     }
   };
@@ -134,13 +159,17 @@ export default function ExpensesEditor() {
     const problem = validate(draft);
     if (problem) return setError(problem);
     run(async () => {
-      await createExpense({
-        spent_at: toTimestamp(draft.date),
-        concept: draft.concept.trim(),
-        category: draft.category.trim(),
-        amount: parseAmount(draft.amount)!,
-        payment_method: draft.method,
-      });
+      await saveExpense(
+        null,
+        {
+          spent_at: toTimestamp(draft.date),
+          concept: draft.concept.trim(),
+          category: draft.category.trim(),
+          amount: parseAmount(draft.amount)!,
+          payment_method: draft.method,
+        },
+        staffToken
+      );
       setDraft((d) => ({ ...emptyDraft(), date: d.date, category: d.category, method: d.method }));
     }, 'Gasto agregado.');
   };
@@ -156,8 +185,9 @@ export default function ExpensesEditor() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Gastos</h1>
           <p className="text-sm text-slate-500">
-            Compras, alquiler, servicios y cualquier salida de dinero del local. Se descuentan de las ventas en el
-            resultado del análisis.
+            {isManager
+              ? 'Compras y pagos que hiciste en el local. Ves los gastos cargados por los encargados; puedes corregir o borrar los tuyos durante 24 horas.'
+              : 'Compras, alquiler, servicios y cualquier salida de dinero del local. Se descuentan de las ventas en el resultado del análisis.'}
           </p>
         </div>
 
@@ -218,6 +248,7 @@ export default function ExpensesEditor() {
           <input
             type="date"
             value={draft.date}
+            min={minDate}
             max={todayLocal()}
             onChange={(e) => e.target.value && setDraft({ ...draft, date: e.target.value })}
             aria-label="Fecha"
@@ -319,6 +350,7 @@ export default function ExpensesEditor() {
                     <EditRow
                       key={e.id}
                       expense={e}
+                      minDate={minDate}
                       saving={saving}
                       onCancel={() => setEditingId(null)}
                       onSave={(d) => {
@@ -326,13 +358,17 @@ export default function ExpensesEditor() {
                         if (problem) return setError(problem);
                         const originalDate = isoDate(new Date(e.spent_at));
                         run(async () => {
-                          await updateExpense(e.id, {
-                            spent_at: d.date === originalDate ? e.spent_at : toTimestamp(d.date),
-                            concept: d.concept.trim(),
-                            category: d.category.trim(),
-                            amount: parseAmount(d.amount)!,
-                            payment_method: d.method,
-                          });
+                          await saveExpense(
+                            e.id,
+                            {
+                              spent_at: d.date === originalDate ? e.spent_at : toTimestamp(d.date),
+                              concept: d.concept.trim(),
+                              category: d.category.trim(),
+                              amount: parseAmount(d.amount)!,
+                              payment_method: d.method,
+                            },
+                            staffToken
+                          );
                           setEditingId(null);
                         }, 'Gasto actualizado.');
                       }}
@@ -344,11 +380,14 @@ export default function ExpensesEditor() {
                         <p className="text-xs text-slate-500">
                           {new Date(e.spent_at).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })} ·{' '}
                           {e.category} · {methodLabel(e.payment_method)}
+                          {e.created_by_name ? ` · cargó ${e.created_by_name}` : ''}
                         </p>
                       </div>
                       <span className="w-28 text-right font-semibold text-slate-900 tabular-nums">
                         {money(e.amount)}
                       </span>
+                      {e.editable && (
+                      <>
                       <Button size="sm" variant="outline" onClick={() => setEditingId(e.id)} aria-label={`Editar ${e.concept}`}>
                         <Pencil size={14} />
                         Editar
@@ -361,11 +400,13 @@ export default function ExpensesEditor() {
                         aria-label={`Eliminar ${e.concept}`}
                         onClick={() => {
                           if (!window.confirm(`¿Eliminar el gasto "${e.concept}" por ${money(e.amount)}?`)) return;
-                          run(() => deleteExpense(e.id), 'Gasto eliminado.');
+                          run(() => removeExpense(e.id, staffToken), 'Gasto eliminado.');
                         }}
                       >
                         <Trash2 size={16} />
                       </Button>
+                      </>
+                      )}
                     </li>
                   )
                 )}
@@ -398,11 +439,13 @@ export default function ExpensesEditor() {
 
 function EditRow({
   expense,
+  minDate,
   saving,
   onCancel,
   onSave,
 }: {
-  expense: Expense;
+  expense: ExpenseRow;
+  minDate?: string;
   saving: boolean;
   onCancel: () => void;
   onSave: (d: Draft) => void;
@@ -428,6 +471,7 @@ function EditRow({
         <input
           type="date"
           value={d.date}
+          min={minDate}
           max={todayLocal()}
           onChange={(e) => e.target.value && setD({ ...d, date: e.target.value })}
           aria-label="Fecha"

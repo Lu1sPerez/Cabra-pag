@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { getSalesHistory, type ClosedOrder } from '@/actions/history-actions';
 import { isoDate, presetRange, PRESETS, type PresetId } from '@/lib/date-range';
 import { downloadTicket, shareTicket, ticketNumber, type TicketData } from '@/lib/ticket';
+import { isStaffSessionError, useStaff } from '@/components/auth/StaffProvider';
 
 const money = (n: number) => `$ ${n.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -131,6 +132,8 @@ function downloadCsv(rows: Row[], from: string, to: string) {
 }
 
 export default function SalesHistory() {
+  const { staff, lock } = useStaff();
+  const staffToken = staff?.token ?? null;
   const [preset, setPreset] = useState<PresetId | null>('today');
   const [[from, to], setRange] = useState<[string, string]>(() => presetRange('today'));
   const [orders, setOrders] = useState<ClosedOrder[]>([]);
@@ -146,7 +149,7 @@ export default function SalesHistory() {
     let active = true;
     setLoading(true);
     setError(null);
-    getSalesHistory(from, to)
+    getSalesHistory(from, to, staffToken)
       .then((d) => {
         if (!active) return;
         setOrders(d);
@@ -155,13 +158,14 @@ export default function SalesHistory() {
       })
       .catch((e) => {
         console.error(e);
+        if (isStaffSessionError(e)) return lock();
         if (active) setError('No se pudo cargar el historial. Revisa la conexión con Supabase.');
       })
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [from, to]);
+  }, [from, to, staffToken, lock]);
 
   const rows = useMemo(() => orders.map(toRow), [orders]);
 

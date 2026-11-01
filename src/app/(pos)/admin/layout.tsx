@@ -1,5 +1,6 @@
-import RequireAuth from '@/components/auth/RequireAuth';
+import AdminGate from '@/components/auth/AdminGate';
 
+// Ajustes: solo el admin, salvo Ventas y Gastos, que también abre el encargado
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  return <RequireAuth role="admin">{children}</RequireAuth>;
+  return <AdminGate>{children}</AdminGate>;
 }
