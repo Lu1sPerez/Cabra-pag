@@ -186,7 +186,7 @@ export default function ExpensesEditor() {
           <h1 className="text-2xl font-bold text-slate-800">Gastos</h1>
           <p className="text-sm text-slate-500">
             {isManager
-              ? 'Compras y pagos que hiciste en el local. Ves los gastos cargados por los encargados; puedes corregir o borrar los tuyos durante 24 horas.'
+              ? 'Compras y pagos que se hicieron en el local.'
               : 'Compras, alquiler, servicios y cualquier salida de dinero del local. Se descuentan de las ventas en el resultado del análisis.'}
           </p>
         </div>
