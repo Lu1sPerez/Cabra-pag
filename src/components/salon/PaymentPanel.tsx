@@ -20,13 +20,17 @@ import {
 } from '@/actions/payment-methods-actions';
 import { downloadTicket, shareTicket, ticketTotals, type TicketData } from '@/lib/ticket';
 
-type Mode = 'all' | 'equal' | 'items';
+type Mode = 'all' | 'equal' | 'items' | 'amount';
 
 const MODES: { id: Mode; label: string }[] = [
   { id: 'all', label: 'Todo junto' },
   { id: 'equal', label: 'Partes iguales' },
   { id: 'items', label: 'Por productos' },
+  { id: 'amount', label: 'Por monto' },
 ];
+
+// Montos redondos que se ofrecen como atajo en "Por monto"
+const ROUND_AMOUNTS = [5000, 10000, 20000, 50000];
 
 const QUICK_PERCENTS = [5, 10, 15, 20];
 
@@ -74,6 +78,8 @@ export default function PaymentPanel({
   const [methodId, setMethodId] = useState<string | null>(null);
   const [cashGiven, setCashGiven] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // "Por monto": cuánto de la cuenta cubre este pago (antes de recargos del medio)
+  const [amountRaw, setAmountRaw] = useState('');
 
   // Descuento (solo antes del primer pago)
   const initialDiscount = Number(order.discount ?? 0);
@@ -163,7 +169,21 @@ export default function PaymentPanel({
   const partsLeft = Math.max(1, parts - payments.length);
 
   let base = due;
+  let amountError: string | null = null;
   if (mode === 'equal') base = partsLeft === 1 ? due : round2(due / partsLeft);
+  if (mode === 'amount') {
+    const a = amountRaw.trim() === '' ? 0 : parseNumber(amountRaw);
+    if (Number.isNaN(a) || a < 0) {
+      base = 0;
+      amountError = 'Ingresa un monto válido.';
+    } else if (a > due + 0.01) {
+      base = 0;
+      amountError = `Supera lo que falta cobrar (${money(due)}).`;
+    } else {
+      // Si queda un resto de centavos, se cobra todo lo que falta
+      base = due - a < 0.01 ? due : round2(a);
+    }
+  }
   if (mode === 'items') {
     const raw = selectedUnits.reduce((acc, u) => acc + u.price, 0);
     base =
@@ -186,7 +206,17 @@ export default function PaymentPanel({
     return Array.from(new Set(rounded)).filter((v) => v > charged).slice(0, 3);
   }, [charged]);
 
-  const canPay = !busy && !loading && !!method && base > 0 && !cashTooLow && !discountError && due > 0;
+  const canPay = !busy && !loading && !!method && base > 0 && !cashTooLow && !discountError && !amountError && due > 0;
+
+  // Atajos de "Por monto": todo lo que falta, la mitad y montos redondos menores
+  const amountShortcuts = useMemo(() => {
+    if (due <= 0) return [] as { label: string; value: number }[];
+    const list: { label: string; value: number }[] = [{ label: `Todo lo que falta · ${money(due)}`, value: due }];
+    const half = round2(due / 2);
+    if (half >= 1) list.push({ label: `La mitad · ${money(half)}`, value: half });
+    for (const v of ROUND_AMOUNTS) if (v < due && v !== half) list.push({ label: money(v), value: v });
+    return list.slice(0, 5);
+  }, [due]);
 
   // --- Ticket ---
   const ticketFor = (list: OrderPayment[], disc: number, reason: string | null): TicketData => ({
@@ -250,6 +280,7 @@ export default function PaymentPanel({
 
       setCashGiven('');
       setSelected(new Set());
+      setAmountRaw('');
 
       if (result.closed) {
         setDone({ payments: [...payments, newPayment], discount, reason: discount > 0 ? discountReason.trim() || null : null });
@@ -477,7 +508,7 @@ export default function PaymentPanel({
               ))}
 
             {/* Forma de cobro */}
-            <div role="tablist" aria-label="Forma de cobro" className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
+            <div role="tablist" aria-label="Forma de cobro" className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
               {MODES.map((m) => (
                 <button
                   key={m.id}
@@ -487,6 +518,7 @@ export default function PaymentPanel({
                   onClick={() => {
                     setMode(m.id);
                     setSelected(new Set());
+                    setAmountRaw('');
                   }}
                   className={cn(
                     'h-11 rounded-lg text-sm font-bold transition-colors',
@@ -571,6 +603,49 @@ export default function PaymentPanel({
               </fieldset>
             )}
 
+            {mode === 'amount' && (
+              <div className="space-y-2 rounded-xl border bg-white p-4">
+                <label className="block">
+                  <span className="text-sm font-bold text-slate-900">¿Cuánto paga con este medio?</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={amountRaw}
+                    onChange={(e) => setAmountRaw(e.target.value.replace(/[^\d.,]/g, ''))}
+                    placeholder={`Hasta ${money(due)}`}
+                    aria-invalid={!!amountError}
+                    className="mt-1 h-12 w-full max-w-xs rounded-lg border px-3 text-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {amountShortcuts.map((s) => (
+                    <Button
+                      key={s.label}
+                      type="button"
+                      variant="outline"
+                      className="h-10"
+                      onClick={() => setAmountRaw(String(s.value).replace('.', ','))}
+                    >
+                      {s.label}
+                    </Button>
+                  ))}
+                </div>
+                {amountError ? (
+                  <p className="text-sm text-red-700">{amountError}</p>
+                ) : base > 0 && base < due ? (
+                  <p className="text-sm text-slate-600">
+                    Después de este pago quedan <strong className="text-slate-900">{money(round2(due - base))}</strong> por cobrar.
+                  </p>
+                ) : null}
+                {base > 0 && adjustment !== 0 && method && (
+                  <p className="text-sm text-slate-600">
+                    {method.name} {adjustment > 0 ? 'tiene recargo' : 'tiene descuento'}: se cobran{' '}
+                    <strong className="text-slate-900">{money(charged)}</strong> y se descuentan {money(base)} de la cuenta.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Pagos registrados */}
             {hasPayments && (
               <ul className="space-y-2">
@@ -615,7 +690,11 @@ export default function PaymentPanel({
             {/* Medio de pago */}
             <div className="space-y-2">
               <p className="text-sm font-bold text-slate-600">
-                {mode === 'equal' ? `Parte ${payments.length + 1}: ¿cómo paga?` : '¿Cómo paga?'}
+                {mode === 'equal'
+                  ? `Parte ${payments.length + 1}: ¿cómo paga?`
+                  : mode === 'amount'
+                    ? '¿Con qué medio paga ese monto?'
+                    : '¿Cómo paga?'}
               </p>
               {methods.length === 0 ? (
                 <p className="text-sm text-red-700">
@@ -686,7 +765,9 @@ export default function PaymentPanel({
                   : base <= 0
                     ? mode === 'items'
                       ? 'Marca qué productos paga'
-                      : 'Nada por cobrar'
+                      : mode === 'amount'
+                        ? 'Ingresa el monto'
+                        : 'Nada por cobrar'
                     : `${mode === 'all' || base >= due ? 'Cobrar' : `Cobrar parte ${payments.length + 1}`} · ${money(charged)}`}
               </Button>
             </div>
