@@ -196,8 +196,22 @@ export async function applyDiscount(tableId: string, discount: number, reason: s
   if (error) throw error;
 }
 
+// Descuento de un pedido sin mesa (mostrador)
+export async function applyOrderDiscount(orderId: string, discount: number, reason: string | null, staffToken: string | null) {
+  const supabase = createClient();
+  const { error } = await supabase.rpc('apply_order_discount', {
+    p_order_id: orderId,
+    p_discount: discount,
+    p_reason: reason,
+    p_staff_token: staffToken,
+  });
+  if (error) throw error;
+}
+
+// Con tableId cobra una mesa; sin mesa, cobra el pedido (mostrador) por su id
 export async function registerPayment(input: {
-  tableId: string;
+  tableId: string | null;
+  orderId: string;
   methodId: string;
   baseAmount: number | null;
   staffToken: string | null;
@@ -205,14 +219,16 @@ export async function registerPayment(input: {
   items?: { id: string; qty: number }[] | null;
 }) {
   const supabase = createClient();
-  const { data, error } = await supabase.rpc('register_payment', {
-    p_table_id: input.tableId,
+  const common = {
     p_method_id: input.methodId,
     p_base_amount: input.baseAmount,
     p_staff_token: input.staffToken,
     p_cash_given: input.cashGiven ?? null,
     p_items: input.items && input.items.length ? input.items : null,
-  });
+  };
+  const { data, error } = input.tableId
+    ? await supabase.rpc('register_payment', { p_table_id: input.tableId, ...common })
+    : await supabase.rpc('register_order_payment', { p_order_id: input.orderId, ...common });
   if (error) throw error;
   const r = data as any;
   return {
@@ -245,7 +261,8 @@ export async function getOpenOrdersSummary() {
   const { data, error } = await supabase
     .from('orders')
     .select('table_id, total, created_at, opened_by, order_items ( quantity, created_at )')
-    .eq('status', 'open');
+    .eq('status', 'open')
+    .not('table_id', 'is', null); // los pedidos de mostrador no son mesas
   if (error) throw error;
   return (data ?? []).map((o: any) => {
     const items = (o.order_items ?? []) as { quantity: number; created_at: string }[];

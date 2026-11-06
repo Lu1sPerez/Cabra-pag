@@ -75,6 +75,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const admin = isAdmin ? ADMIN : [];
 
   const salonActive = pathname === '/' || pathname.startsWith('/salon');
+  const mostradorActive = pathname.startsWith('/mostrador');
   const section = [...operation, ...admin].find((i) => matches(pathname, i.href));
 
   const personName = isAdmin ? 'Administración' : staff?.name ?? 'Sin mozo';
@@ -112,6 +113,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             )}
           >
             Salón
+          </Link>
+          <Link
+            href="/mostrador"
+            aria-current={mostradorActive ? 'page' : undefined}
+            className={cn(
+              'flex h-10 items-center rounded-lg px-4 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+              mostradorActive ? 'bg-surface text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
+            )}
+          >
+            Mostrador
           </Link>
           {section && (
             <span aria-current="page" className="flex h-10 min-w-0 items-center gap-2 rounded-lg bg-surface px-3 text-sm font-bold text-slate-900 shadow-sm">

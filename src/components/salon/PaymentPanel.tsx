@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
   applyDiscount,
+  applyOrderDiscount,
   getOrderPayments,
   registerPayment,
   voidPayment,
@@ -51,11 +52,13 @@ const parseNumber = (raw: string) => {
 type Unit = { key: string; itemId: string; name: string; price: number; paid: boolean };
 
 interface PaymentPanelProps {
-  tableId: string;
+  tableId: string | null; // null: pedido de mostrador (se cobra por el id del pedido)
   tableName: string;
   order: OpenOrder;
   staffToken: string | null;
   staffName: string | null;
+  doneHint?: string; // texto bajo "Cobro registrado"
+  finishLabel?: string; // botón final
   onClose: () => void;
   onFinished: () => void;
   onSessionError: (e: unknown) => boolean;
@@ -67,6 +70,8 @@ export default function PaymentPanel({
   order,
   staffToken,
   staffName,
+  doneHint = 'la mesa quedó libre',
+  finishLabel = 'Volver al salón',
   onClose,
   onFinished,
   onSessionError,
@@ -258,7 +263,9 @@ export default function PaymentPanel({
     setNotice(null);
     try {
       if (!hasPayments) {
-        await applyDiscount(tableId, discount, discount > 0 ? discountReason.trim() || null : null, staffToken);
+        const reason = discount > 0 ? discountReason.trim() || null : null;
+        if (tableId) await applyDiscount(tableId, discount, reason, staffToken);
+        else await applyOrderDiscount(order.id, discount, reason, staffToken);
       }
       const unitsByItem = new Map<string, number>();
       for (const u of selectedUnits) unitsByItem.set(u.itemId, (unitsByItem.get(u.itemId) ?? 0) + 1);
@@ -267,6 +274,7 @@ export default function PaymentPanel({
 
       const result = await registerPayment({
         tableId,
+        orderId: order.id,
         methodId: method.id,
         baseAmount: mode === 'items' ? null : base,
         staffToken,
@@ -359,7 +367,9 @@ export default function PaymentPanel({
             <h2 id="payment-title" className="font-display text-3xl font-extrabold tracking-tight text-slate-900">
               Cobro registrado
             </h2>
-            <p className="mt-1 text-slate-600">{tableName} · la mesa quedó libre</p>
+            <p className="mt-1 text-slate-600">
+              {tableName} · {doneHint}
+            </p>
           </div>
 
           <dl className="grid grid-cols-[1fr_auto] gap-y-1.5 rounded-2xl border bg-surface p-4 text-sm">
@@ -412,7 +422,7 @@ export default function PaymentPanel({
             onClick={onFinished}
             className="h-12 w-full rounded-xl bg-slate-900 text-[15px] font-extrabold text-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
           >
-            Volver al salón
+            {finishLabel}
           </button>
         </div>
       </Overlay>

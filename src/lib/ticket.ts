@@ -8,7 +8,8 @@ export type TicketPayment = { method: string; amount: number; adjustment: number
 export type TicketData = {
   kind: 'receipt' | 'precuenta';
   orderId: string;
-  tableName: string;
+  tableName: string; // "S2" o "Mostrador #7 · Juan"
+  placeLabel?: string; // "Mesa" por defecto; "Pedido" en el mostrador
   date: Date;
   staffNames: string[];
   items: TicketItem[];
@@ -114,7 +115,7 @@ export function buildTicketHtml(d: TicketData) {
   <hr class="sep">
   <div class="row"><span class="muted">${isReceipt ? 'Ticket' : 'Cuenta'}</span><span>${esc(ticketNumber(d.orderId))}</span></div>
   <div class="row"><span class="muted">Fecha</span><span>${esc(date)}</span></div>
-  <div class="row"><span class="muted">Mesa</span><span>${esc(d.tableName)}</span></div>
+  <div class="row"><span class="muted">${esc(d.placeLabel ?? (/^mostrador/i.test(d.tableName) ? 'Pedido' : 'Mesa'))}</span><span>${esc(d.tableName)}</span></div>
   ${staff ? `<div class="row"><span class="muted">Atendió</span><span>${esc(staff)}</span></div>` : ''}
   <hr class="sep">
   ${items}
