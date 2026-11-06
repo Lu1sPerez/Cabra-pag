@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 type Variant = 'default' | 'secondary' | 'destructive' | 'outline';
 
 const variants: Record<Variant, string> = {
-  default: 'border-transparent bg-slate-900 text-white',
+  default: 'border-transparent bg-blue-600 text-white',
   secondary: 'border-transparent bg-slate-100 text-slate-900',
   destructive: 'border-transparent bg-red-600 text-white',
   outline: 'text-slate-900',

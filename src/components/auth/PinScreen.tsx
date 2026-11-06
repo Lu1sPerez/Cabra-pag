@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Delete } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import Logo from '@/components/brand/Logo';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useStaff } from '@/components/auth/StaffProvider';
 import { listActiveStaff, startStaffSession, type StaffOption } from '@/actions/staff-actions';
@@ -102,15 +103,16 @@ export default function PinScreen() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-6">
+    <main className="min-h-screen bg-slate-50 text-slate-900 flex flex-col items-center justify-center p-6">
       {!selected ? (
         <div className="w-full max-w-2xl space-y-6">
-          <h1 className="text-3xl font-bold text-center">¿Quién eres?</h1>
+          <Logo className="mx-auto h-14 w-16 text-slate-900" />
+          <h1 className="font-display text-3xl font-extrabold text-center">¿Quién eres?</h1>
 
           {loading ? (
-            <p className="text-center text-slate-400">Cargando…</p>
+            <p className="text-center text-slate-500">Cargando…</p>
           ) : options.length === 0 ? (
-            <p className="text-center text-slate-300">
+            <p className="text-center text-slate-600">
               No hay mozos cargados. El administrador puede crearlos en Administración › Mozos.
             </p>
           ) : (
@@ -124,7 +126,7 @@ export default function PinScreen() {
                     setPin('');
                     setError(null);
                   }}
-                  className="h-20 rounded-xl bg-slate-800 text-lg font-semibold hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                  className="h-20 rounded-xl border bg-surface text-lg font-bold hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                 >
                   {o.name}
                 </button>
@@ -132,27 +134,27 @@ export default function PinScreen() {
             </div>
           )}
 
-          {error && <p role="alert" className="text-center text-red-300">{error}</p>}
+          {error && <p role="alert" className="text-center text-red-700">{error}</p>}
         </div>
       ) : (
         <div className="w-full max-w-xs space-y-6">
           <div className="text-center space-y-1">
-            <p className="text-slate-400">Hola,</p>
-            <h1 className="text-2xl font-bold">{selected.name}</h1>
-            <p className="text-slate-400 text-sm">Ingresa tu PIN</p>
+            <p className="text-slate-500">Hola,</p>
+            <h1 className="font-display text-3xl font-extrabold">{selected.name}</h1>
+            <p className="text-slate-500 text-sm">Ingresa tu PIN</p>
           </div>
 
           <div className="flex justify-center gap-4" aria-label={`${pin.length} de 4 dígitos ingresados`}>
             {[0, 1, 2, 3].map((i) => (
               <span
                 key={i}
-                className={cn('h-4 w-4 rounded-full border-2 border-white', i < pin.length && 'bg-white')}
+                className={cn('h-4 w-4 rounded-full border-2 border-slate-900', i < pin.length && 'bg-slate-900')}
               />
             ))}
           </div>
 
-          <p role="alert" className="h-5 text-center text-sm text-red-300">
-            {checking ? <span className="text-slate-400">Verificando…</span> : error}
+          <p role="alert" className="h-5 text-center text-sm text-red-700">
+            {checking ? <span className="text-slate-500">Verificando…</span> : error}
           </p>
 
           <div className="grid grid-cols-3 gap-3">
@@ -162,7 +164,7 @@ export default function PinScreen() {
                 type="button"
                 onClick={() => press(k)}
                 disabled={checking}
-                className="h-16 rounded-xl bg-slate-800 text-2xl font-semibold hover:bg-slate-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                className="h-16 rounded-xl border bg-surface font-display text-2xl font-bold hover:bg-slate-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
               >
                 {k}
               </button>
@@ -174,7 +176,7 @@ export default function PinScreen() {
                 setPin('');
                 setError(null);
               }}
-              className="h-16 rounded-xl text-sm text-slate-300 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              className="h-16 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             >
               Volver
             </button>
@@ -182,7 +184,7 @@ export default function PinScreen() {
               type="button"
               onClick={() => press('0')}
               disabled={checking}
-              className="h-16 rounded-xl bg-slate-800 text-2xl font-semibold hover:bg-slate-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              className="h-16 rounded-xl border bg-surface font-display text-2xl font-bold hover:bg-slate-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             >
               0
             </button>
@@ -191,7 +193,7 @@ export default function PinScreen() {
               onClick={erase}
               aria-label="Borrar"
               disabled={checking}
-              className="h-16 rounded-xl flex items-center justify-center text-slate-300 hover:bg-slate-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              className="h-16 rounded-xl flex items-center justify-center text-slate-600 hover:bg-slate-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             >
               <Delete size={24} />
             </button>
@@ -203,7 +205,7 @@ export default function PinScreen() {
         variant="ghost"
         size="sm"
         onClick={handleSignOut}
-        className="mt-10 text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+        className="mt-10 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
       >
         Cerrar sesión del equipo
       </Button>

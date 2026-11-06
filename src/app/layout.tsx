@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Bricolage_Grotesque, Manrope } from 'next/font/google';
 import { AuthProvider } from '@/components/auth/AuthProvider';
+import { DEFAULT_THEME, THEME_INIT_SCRIPT } from '@/lib/theme';
 import './globals.css';
 
 // Las fuentes se descargan al compilar y se sirven desde el propio sitio:
@@ -23,12 +24,21 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#2C3842',
+  themeColor: '#101113',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" className={`${manrope.variable} ${bricolage.variable}`}>
+    <html
+      lang="es"
+      data-theme={DEFAULT_THEME}
+      className={`${manrope.variable} ${bricolage.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        {/* Aplica el tema guardado antes de pintar */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="antialiased">
         <AuthProvider>{children}</AuthProvider>
       </body>

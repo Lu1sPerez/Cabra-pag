@@ -2,6 +2,116 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ------------------------------------------------------------------
+   Temas. Valores en "R G B" para que Tailwind pueda aplicar opacidad.
+   Claro: marfil y blanco. Oscuro: grafito neutro (sin tinte azul).
+   ------------------------------------------------------------------ */
+:root {
+  color-scheme: light;
+
+  --n-50: 240 238 233;   /* fondo */
+  --n-100: 231 228 222;
+  --n-200: 216 212 204;  /* bordes */
+  --n-300: 191 186 176;
+  --n-400: 153 148 138;
+  --n-500: 107 103 95;   /* texto secundario */
+  --n-600: 85 82 76;
+  --n-700: 64 62 58;
+  --n-800: 46 59 69;
+  --n-900: 34 45 53;     /* títulos */
+  --n-950: 22 30 36;
+
+  --b-50: 238 242 245;
+  --b-100: 220 228 234;
+  --b-200: 188 202 213;
+  --b-300: 150 172 188;
+  --b-400: 111 139 160;
+  --b-500: 88 116 138;
+  --b-600: 73 98 117;    /* #496275, principal */
+  --b-700: 61 82 98;
+  --b-800: 50 67 79;
+  --b-900: 40 54 64;
+  --b-950: 26 36 43;
+
+  --surface: 255 255 255;
+  --bar: 255 255 255;
+  --canvas: 250 249 246;
+  --dot: 223 220 213;
+  --cuenta: 240 162 59;
+  --cuenta-fg: 42 26 0;
+  --ok-bg: 223 243 234;
+  --ok-fg: 29 92 67;
+  --warn: 154 90 8;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --n-50: 22 23 26;      /* fondo grafito */
+  --n-100: 42 43 48;
+  --n-200: 51 53 59;     /* bordes */
+  --n-300: 69 71 78;
+  --n-400: 117 119 126;
+  --n-500: 163 164 170;  /* texto secundario */
+  --n-600: 185 186 191;
+  --n-700: 207 208 211;
+  --n-800: 228 228 230;
+  --n-900: 242 241 238;  /* títulos */
+  --n-950: 250 250 249;
+
+  --b-50: 28 37 44;
+  --b-100: 34 48 58;
+  --b-200: 44 62 75;
+  --b-300: 59 82 100;
+  --b-400: 106 140 165;
+  --b-500: 126 159 183;
+  --b-600: 85 119 144;   /* botones: texto blanco legible */
+  --b-700: 74 106 130;
+  --b-800: 157 184 204;
+  --b-900: 201 216 228;
+  --b-950: 228 236 242;
+
+  --surface: 31 32 36;
+  --bar: 16 17 19;
+  --canvas: 27 28 31;
+  --dot: 46 48 53;
+  --cuenta: 240 162 59;
+  --cuenta-fg: 42 26 0;
+  --ok-bg: 33 66 55;
+  --ok-fg: 159 217 190;
+  --warn: 240 162 59;
+}
+
+/* Pantallas de administración que usan colores fijos: en oscuro se adaptan */
+[data-theme='dark'] .bg-white,
+[data-theme='dark'] .hover\:bg-white:hover {
+  background-color: rgb(var(--surface));
+}
+[data-theme='dark'] .text-blue-600,
+[data-theme='dark'] .text-blue-700,
+[data-theme='dark'] .hover\:text-blue-700:hover {
+  color: rgb(var(--b-800));
+}
+[data-theme='dark'] .bg-red-50,
+[data-theme='dark'] .hover\:bg-red-50:hover { background-color: rgb(220 90 70 / 0.14); }
+[data-theme='dark'] .bg-red-100,
+[data-theme='dark'] .hover\:bg-red-200:hover { background-color: rgb(220 90 70 / 0.24); }
+[data-theme='dark'] .text-red-600,
+[data-theme='dark'] .text-red-700,
+[data-theme='dark'] .text-red-800,
+[data-theme='dark'] .text-red-900 { color: rgb(242 169 160); }
+[data-theme='dark'] .bg-green-50 { background-color: rgb(63 156 122 / 0.16); }
+[data-theme='dark'] .bg-green-100,
+[data-theme='dark'] .hover\:bg-green-200:hover { background-color: rgb(63 156 122 / 0.26); }
+[data-theme='dark'] .text-green-700,
+[data-theme='dark'] .text-green-800,
+[data-theme='dark'] .text-green-900 { color: rgb(159 217 190); }
+[data-theme='dark'] .bg-yellow-50 { background-color: rgb(240 162 59 / 0.14); }
+[data-theme='dark'] .bg-yellow-100,
+[data-theme='dark'] .hover\:bg-yellow-200:hover { background-color: rgb(240 162 59 / 0.24); }
+[data-theme='dark'] .text-yellow-900 { color: rgb(245 201 138); }
+[data-theme='dark'] * { --tw-ring-offset-color: rgb(var(--n-50)); }
+
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;
@@ -29,21 +139,21 @@
   }
 }
 
-/* Mesa que acaba de cambiar de estado: late dos veces */
+/* Mesa que acaba de cambiar de estado: un rebote corto, sin brillo */
 @keyframes mesa-pulso {
-  0% { box-shadow: 0 0 0 0 rgba(73, 98, 117, 0.55); }
-  70% { box-shadow: 0 0 0 16px rgba(73, 98, 117, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(73, 98, 117, 0); }
+  0%, 100% { transform: scale(1); }
+  30% { transform: scale(1.05); }
+  60% { transform: scale(0.98); }
 }
 
 .mesa-pulso {
-  animation: mesa-pulso 1.6s ease-out 2;
+  animation: mesa-pulso 0.7s ease-out 2;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .mesa-pulso {
     animation: none;
-    outline: 3px solid #222d35;
+    outline: 3px solid rgb(var(--n-900));
     outline-offset: 3px;
   }
 }

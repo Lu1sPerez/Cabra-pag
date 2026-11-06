@@ -5,8 +5,8 @@ type Variant = 'default' | 'outline' | 'secondary' | 'ghost';
 type Size = 'default' | 'sm' | 'lg' | 'icon';
 
 const variants: Record<Variant, string> = {
-  default: 'bg-slate-900 text-white hover:bg-slate-800',
-  outline: 'border border-slate-300 bg-white text-slate-900 hover:bg-slate-100',
+  default: 'bg-blue-600 text-white hover:bg-blue-700',
+  outline: 'border border-slate-300 bg-surface text-slate-900 hover:bg-slate-100',
   secondary: 'bg-slate-100 text-slate-900 hover:bg-slate-200',
   ghost: 'text-slate-900 hover:bg-slate-100',
 };

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, Minus, Plus, Receipt, Search, Send, Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import PaymentPanel from '@/components/salon/PaymentPanel';
 import { isStaffSessionError, useStaff } from '@/components/auth/StaffProvider';
@@ -27,12 +26,16 @@ import {
 
 type CartItem = Product & { quantity: number; notes: string };
 
-const ITEM_STATUS: Record<string, { label: string; className: string }> = {
-  pending: { label: 'Pendiente', className: 'bg-slate-200 text-slate-900' },
-  preparing: { label: 'Preparando', className: 'bg-[#F2C14E] text-[#2B2108]' },
-  ready: { label: 'Listo', className: 'bg-[#BFD9B9] text-[#1F3A24]' },
-  served: { label: 'Servido', className: 'bg-slate-200 text-slate-900' },
+// Estado de cada producto enviado (la pantalla de cocina lo irá cambiando)
+const ITEM_STATUS: Record<string, { label: string; className: string } | undefined> = {
+  pending: undefined, // recién enviado: no hace falta etiqueta
+  preparing: { label: 'Preparando', className: 'bg-cuenta/20 text-warn' },
+  ready: { label: 'Listo', className: 'bg-ok-bg text-ok-fg' },
+  served: { label: 'Servido', className: 'bg-slate-100 text-slate-500' },
 };
+
+// Color de cada categoría según su orden (hasta que se puedan elegir en Productos)
+const CATEGORY_COLORS = ['#C99A6E', '#E09AAE', '#DDB86A', '#9CC38F', '#B7A6E8', '#7FC6B8', '#E8A27A', '#8FB4D9'];
 
 const money = (n: number) => `$ ${n.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
 
@@ -175,6 +178,18 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
     return products.filter((p) => p.category_id === activeCategory);
   }, [products, activeCategory, search]);
 
+  const categoryColor = useMemo(
+    () => new Map(categories.map((c, i) => [c.id, CATEGORY_COLORS[i % CATEGORY_COLORS.length]])),
+    [categories]
+  );
+  const categoryCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of products) m.set(p.category_id, (m.get(p.category_id) ?? 0) + 1);
+    return m;
+  }, [products]);
+  const inCart = useMemo(() => new Map(cart.map((i) => [i.id, i.quantity])), [cart]);
+  const activeCat = categories.find((c) => c.id === activeCategory) ?? null;
+
   // --- Carrito ---
   const addToCart = (product: Product) => {
     if (isPaying) return;
@@ -272,19 +287,68 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
   if (loadError) return <div className="p-6 text-red-700">{loadError}</div>;
   if (!table) return <div className="p-6 text-slate-600">Esta mesa no existe. Vuelve al salón y elige otra.</div>;
 
+  const statusBadge = isPaying
+    ? { label: 'Cuenta pedida', className: 'bg-cuenta text-cuenta-fg' }
+    : openOrder
+      ? { label: 'Ocupada', className: 'bg-blue-600 text-white' }
+      : { label: 'Libre', className: 'border border-slate-300 text-slate-600' };
+
   return (
-    <div className="flex flex-col lg:flex-row lg:h-screen lg:overflow-hidden">
-      {/* Menú */}
-      <section className="flex-1 min-w-0 flex flex-col gap-4 p-4 sm:p-6 lg:overflow-hidden">
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <Link href="/" className="inline-flex items-center gap-1 text-sm font-bold text-blue-600 hover:text-slate-900">
-              <ChevronLeft size={16} aria-hidden="true" />
-              Volver al salón
-            </Link>
-            <h1 className="font-display text-4xl font-extrabold tracking-tight text-slate-900 leading-none">{table.name}</h1>
-          </div>
-          <label className="flex h-11 w-full sm:w-64 items-center gap-2 rounded-xl border bg-white px-3">
+    <div className="flex flex-col lg:h-[calc(100vh-4rem)] lg:flex-row lg:overflow-hidden">
+      {/* Categorías */}
+      <nav
+        aria-label="Categorías"
+        className={cn(
+          'shrink-0 border-b bg-surface lg:w-[200px] lg:overflow-y-auto lg:border-b-0 lg:border-r',
+          isPaying && 'pointer-events-none opacity-50'
+        )}
+      >
+        {categories.length === 0 ? (
+          <p className="p-4 text-sm text-slate-600">No hay categorías con productos activos.</p>
+        ) : (
+          <ul className="flex gap-1 overflow-x-auto p-2 lg:flex-col lg:p-3">
+            {categories.map((cat) => {
+              const selected = !search && activeCategory === cat.id;
+              return (
+                <li key={cat.id} className="shrink-0">
+                  <button
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => {
+                      setSearch('');
+                      setActiveCategory(cat.id);
+                    }}
+                    className={cn(
+                      'flex h-12 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 lg:h-[52px]',
+                      selected ? 'bg-slate-100 font-extrabold text-slate-900' : 'font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    )}
+                  >
+                    <span className="h-7 w-2 shrink-0 rounded-full" style={{ background: categoryColor.get(cat.id) }} aria-hidden="true" />
+                    <span className="flex-1 whitespace-nowrap lg:whitespace-normal lg:leading-tight">{cat.name}</span>
+                    <span className="hidden text-xs font-semibold text-slate-500 lg:inline">{categoryCount.get(cat.id) ?? 0}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </nav>
+
+      {/* Productos */}
+      <section aria-label="Productos" className="flex min-w-0 flex-1 flex-col gap-4 p-4 sm:p-5 lg:overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="flex items-center gap-2.5 font-display text-2xl font-extrabold text-slate-900">
+            {search ? (
+              'Resultados'
+            ) : (
+              <>
+                <span className="h-3 w-3 rounded-full" style={{ background: activeCat ? categoryColor.get(activeCat.id) : undefined }} aria-hidden="true" />
+                {activeCat?.name ?? 'Menú'}
+              </>
+            )}
+          </h1>
+          <div className="flex-1" />
+          <label className="flex h-11 w-full items-center gap-2 rounded-xl border bg-surface px-3 sm:w-72">
             <Search size={18} className="text-slate-500" aria-hidden="true" />
             <span className="sr-only">Buscar producto</span>
             <input
@@ -292,136 +356,125 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar producto"
-              className="w-full bg-transparent text-sm outline-none"
+              className="w-full bg-transparent text-sm text-slate-900 outline-none"
             />
           </label>
-        </header>
+        </div>
 
         {isPaying && (
-          <p className="rounded-xl border border-[#D9A62E] bg-[#FBEFCF] px-4 py-3 text-sm text-[#3A2A05]">
+          <p className="rounded-xl bg-cuenta/15 px-4 py-3 text-sm font-semibold text-slate-900">
             La cuenta ya fue pedida. Para agregar productos, reabre la mesa.
           </p>
         )}
 
-        {categories.length === 0 ? (
-          <p className="text-slate-600">No hay categorías cargadas. Agrégalas en Menú.</p>
-        ) : (
-          <div className={cn('flex-1 min-h-0 flex flex-col gap-4', isPaying && 'opacity-50 pointer-events-none')}>
-            {!search && (
-              <div role="tablist" aria-label="Categorías" className="flex gap-1 overflow-x-auto rounded-2xl bg-slate-100 p-1">
-                {categories.map((cat) => (
+        <div className={cn('min-h-0 flex-1 pr-1 lg:overflow-y-auto', isPaying && 'pointer-events-none opacity-50')}>
+          {visibleProducts.length === 0 ? (
+            <p className="text-slate-500">{search ? 'Ningún producto coincide.' : 'No hay productos activos en esta categoría.'}</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+              {visibleProducts.map((product) => {
+                const qty = inCart.get(product.id) ?? 0;
+                return (
                   <button
-                    key={cat.id}
+                    key={product.id}
                     type="button"
-                    role="tab"
-                    aria-selected={activeCategory === cat.id}
-                    onClick={() => setActiveCategory(cat.id)}
+                    onClick={() => addToCart(product)}
+                    tabIndex={isPaying ? -1 : 0}
+                    aria-label={`Agregar ${product.name}, ${money(product.price)}${qty ? `, ${qty} en el pedido` : ''}`}
                     className={cn(
-                      'h-10 shrink-0 rounded-xl px-4 text-sm font-bold transition-colors',
-                      activeCategory === cat.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      'relative flex h-[124px] flex-col justify-between overflow-hidden rounded-xl border bg-surface p-3.5 pt-4 text-left transition-colors hover:border-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+                      qty > 0 && 'border-blue-600 hover:border-blue-600'
                     )}
                   >
-                    {cat.name}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="flex-1 min-h-0 lg:overflow-y-auto pr-1">
-              {visibleProducts.length === 0 ? (
-                <p className="text-slate-500">{search ? 'Ningún producto coincide.' : 'No hay productos activos en esta categoría.'}</p>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {visibleProducts.map((product) => (
-                    <button
-                      key={product.id}
-                      type="button"
-                      onClick={() => addToCart(product)}
-                      tabIndex={isPaying ? -1 : 0}
-                      aria-label={`Agregar ${product.name}, ${money(product.price)}`}
-                      className="h-28 rounded-2xl border bg-white p-3.5 text-left flex flex-col justify-between transition-colors hover:border-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                    >
-                      <span className="text-[15px] font-bold leading-tight text-slate-900 line-clamp-2">{product.name}</span>
-                      <span className="flex w-full items-end justify-between">
-                        <span className="font-display text-xl font-bold text-blue-600 tabular-nums">{money(product.price)}</span>
-                        <span className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center" aria-hidden="true">
+                    <span className="absolute inset-x-0 top-0 h-1" style={{ background: categoryColor.get(product.category_id) }} aria-hidden="true" />
+                    <span className="line-clamp-2 text-[15px] font-bold leading-tight text-slate-900">{product.name}</span>
+                    <span className="flex w-full items-end justify-between">
+                      <span className="font-display text-lg font-bold tabular-nums text-slate-900">{money(product.price)}</span>
+                      {qty > 0 ? (
+                        <span className="flex h-8 min-w-[2rem] items-center justify-center rounded-lg bg-blue-600 px-2 text-sm font-extrabold text-white" aria-hidden="true">
+                          {qty}
+                        </span>
+                      ) : (
+                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-900" aria-hidden="true">
                           <Plus size={16} strokeWidth={2.6} />
                         </span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </section>
 
-      {/* Comanda como ticket */}
-      <aside
-        aria-label={`Comanda de ${table.name}`}
-        className="w-full lg:w-[372px] shrink-0 bg-slate-900 text-slate-50 flex flex-col p-5 lg:p-6 lg:overflow-hidden"
-      >
-        <div className="flex items-baseline justify-between gap-2 text-xs font-bold text-blue-200">
-          <span>{isPaying ? 'cuenta pedida' : 'comanda'}{openOrder ? ` · ${elapsed(openOrder.created_at)} abierta` : ''}</span>
-          {staff?.name && <span>Mozo: {staff.name}</span>}
-        </div>
-        <h2 className="mt-1 font-display text-3xl font-extrabold">{table.name}</h2>
+      {/* Comanda */}
+      <aside aria-label={`Comanda de ${table.name}`} className="flex w-full shrink-0 flex-col border-t bg-surface lg:w-[380px] lg:border-l lg:border-t-0">
+        <header className="flex flex-col gap-1.5 border-b px-5 pb-3.5 pt-4">
+          <Link href="/" className="inline-flex items-center gap-1 self-start text-xs font-bold text-slate-500 hover:text-slate-900">
+            <ChevronLeft size={14} aria-hidden="true" />
+            Salón
+          </Link>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-3xl font-extrabold leading-none tracking-tight text-slate-900">{table.name}</h2>
+            <span className={cn('rounded-md px-2.5 py-1 text-xs font-extrabold', statusBadge.className)}>{statusBadge.label}</span>
+          </div>
+          <p className="text-[13px] text-slate-500">
+            {openOrder ? `Abierta hace ${elapsed(openOrder.created_at)}` : 'Sin pedidos todavía'}
+            {staff?.name ? ` · ${staff.name}` : ''}
+          </p>
+        </header>
 
-        <div className="flex-1 min-h-0 lg:overflow-y-auto">
+        <div className="min-h-0 flex-1 space-y-5 px-5 py-4 lg:overflow-y-auto">
           {hasSentItems && (
-            <>
-              <hr className="my-4 border-0 border-t-2 border-dashed border-slate-50/25" />
-              <p className="text-xs font-bold text-blue-200">En cocina</p>
+            <section aria-label="Enviado">
+              <p className="text-[11px] font-extrabold tracking-[0.08em] text-slate-500">ENVIADO</p>
               <ul className="mt-2 space-y-2.5">
                 {sentItems.map((item) => {
-                  const st = ITEM_STATUS[item.status] ?? { label: item.status, className: 'bg-slate-200 text-slate-900' };
+                  const st = ITEM_STATUS[item.status];
                   return (
                     <li key={item.id} className="flex justify-between gap-3 text-sm">
-                      <span className="min-w-0">
-                        <strong>{item.quantity} ×</strong> {item.products?.name ?? 'Producto'}
-                        {item.notes && <span className="block text-xs italic text-blue-200">{item.notes}</span>}
+                      <span className="min-w-0 text-slate-700">
+                        <strong className="text-slate-900">{item.quantity} ×</strong> {item.products?.name ?? 'Producto'}
+                        {item.notes && <span className="block text-xs italic text-slate-500">{item.notes}</span>}
+                        {st && <span className={cn('mt-1 inline-block rounded-md px-2 py-0.5 text-[11px] font-extrabold', st.className)}>{st.label}</span>}
                       </span>
-                      <span className="flex shrink-0 items-center gap-2">
-                        <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-bold', st.className)}>{st.label}</span>
-                        <span className="tabular-nums">{money(item.quantity * Number(item.unit_price ?? 0))}</span>
-                      </span>
+                      <span className="shrink-0 tabular-nums text-slate-700">{money(item.quantity * Number(item.unit_price ?? 0))}</span>
                     </li>
                   );
                 })}
               </ul>
-            </>
+            </section>
           )}
 
           {!isPaying && (
-            <>
-              <hr className="my-4 border-0 border-t-2 border-dashed border-slate-50/25" />
-              <p className="text-xs font-bold text-blue-200">Nuevo pedido</p>
+            <section aria-label="Nuevo pedido">
+              <p className="text-[11px] font-extrabold tracking-[0.08em] text-blue-600">NUEVO · SIN ENVIAR</p>
               {cart.length === 0 ? (
-                <p className="mt-2 text-sm text-blue-200">Toca un producto para agregarlo.</p>
+                <p className="mt-2 text-sm text-slate-500">Toca un producto para agregarlo.</p>
               ) : (
-                <div className="mt-2 space-y-2">
+                <ul className="mt-2 space-y-3">
                   {cart.map((item) => (
-                    <div key={item.id} className="rounded-xl bg-slate-50/[0.07] p-3 space-y-2.5">
+                    <li key={item.id} className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[15px] font-bold">{item.name}</span>
-                        <span className="text-sm tabular-nums">{money(item.price * item.quantity)}</span>
+                        <span className="text-[15px] font-extrabold text-slate-900">{item.name}</span>
+                        <span className="text-sm font-bold tabular-nums text-slate-900">{money(item.price * item.quantity)}</span>
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
                           aria-label={item.quantity === 1 ? `Quitar ${item.name}` : `Restar ${item.name}`}
                           onClick={() => updateQuantity(item.id, -1)}
-                          className="h-10 w-10 rounded-xl border border-slate-50/30 flex items-center justify-center"
+                          className="flex h-10 w-10 items-center justify-center rounded-lg border text-slate-900 hover:bg-slate-100"
                         >
                           {item.quantity === 1 ? <Trash2 size={16} /> : <Minus size={16} />}
                         </button>
-                        <span className="w-5 text-center font-display text-lg font-bold">{item.quantity}</span>
+                        <span className="w-6 text-center font-display text-lg font-bold text-slate-900">{item.quantity}</span>
                         <button
                           type="button"
                           aria-label={`Sumar ${item.name}`}
                           onClick={() => updateQuantity(item.id, 1)}
-                          className="h-10 w-10 rounded-xl border border-slate-50/30 flex items-center justify-center"
+                          className="flex h-10 w-10 items-center justify-center rounded-lg border text-slate-900 hover:bg-slate-100"
                         >
                           <Plus size={16} />
                         </button>
@@ -429,90 +482,97 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
                           type="text"
                           value={item.notes}
                           onChange={(e) => updateNotes(item.id, e.target.value)}
-                          placeholder="Nota"
+                          placeholder="Nota (opcional)"
                           aria-label={`Nota para ${item.name}`}
-                          className="h-10 min-w-0 flex-1 rounded-xl bg-slate-50/10 px-3 text-sm text-slate-50 placeholder:text-blue-200 outline-none focus:ring-2 focus:ring-blue-300"
+                          className="h-10 min-w-0 flex-1 rounded-lg border bg-slate-50 px-3 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               )}
-            </>
+            </section>
           )}
         </div>
 
-        <div className="pt-3">
+        <footer className="space-y-3 border-t px-5 pb-5 pt-3.5">
           {feedback && (
             <p
-              className={cn(
-                'mb-3 rounded-lg px-3 py-2 text-sm',
-                feedback.type === 'ok' ? 'bg-[#BFD9B9] text-[#1F3A24]' : 'bg-red-100 text-red-800'
-              )}
+              role={feedback.type === 'error' ? 'alert' : 'status'}
+              className={cn('rounded-lg px-3 py-2 text-sm font-semibold', feedback.type === 'ok' ? 'bg-ok-bg text-ok-fg' : 'bg-red-50 text-red-700')}
             >
               {feedback.text}
             </p>
           )}
 
-          <hr className="mb-3 border-0 border-t-2 border-dashed border-slate-50/25" />
-          {!isPaying && cart.length > 0 && (
-            <div className="flex justify-between text-sm text-blue-200">
-              <span>Nuevo pedido</span>
-              <span className="tabular-nums">{money(cartTotal)}</span>
-            </div>
-          )}
-          {orderDiscount > 0 && (
-            <div className="flex justify-between text-sm text-blue-200">
-              <span>Descuento</span>
-              <span className="tabular-nums">− {money(orderDiscount)}</span>
-            </div>
-          )}
-          <div className="flex items-baseline justify-between">
-            <span className="text-[15px] font-bold">Total mesa</span>
-            <span className="font-display text-3xl font-extrabold tabular-nums">
+          <dl className="grid grid-cols-[1fr_auto] gap-y-1 text-[13px] text-slate-500">
+            {hasSentItems && (
+              <>
+                <dt>Enviado</dt>
+                <dd className="text-right tabular-nums">{money(sentSubtotal)}</dd>
+              </>
+            )}
+            {!isPaying && cart.length > 0 && (
+              <>
+                <dt>Nuevo</dt>
+                <dd className="text-right tabular-nums">{money(cartTotal)}</dd>
+              </>
+            )}
+            {orderDiscount > 0 && (
+              <>
+                <dt>Descuento</dt>
+                <dd className="text-right tabular-nums">− {money(orderDiscount)}</dd>
+              </>
+            )}
+            <dt className="pt-1.5 text-[15px] font-extrabold text-slate-900">Total</dt>
+            <dd className="text-right font-display text-[28px] font-extrabold leading-tight tabular-nums text-slate-900">
               {money(orderTotal + (isPaying ? 0 : cartTotal))}
-            </span>
-          </div>
+            </dd>
+          </dl>
 
           {isPaying ? (
-            <div className="mt-3 space-y-2">
+            <>
               <button
                 type="button"
                 onClick={() => setPayOpen(true)}
                 disabled={working}
-                className="h-14 w-full rounded-2xl bg-slate-50 text-lg font-extrabold text-slate-900 disabled:opacity-50"
+                className="flex h-14 w-full items-center justify-center rounded-xl bg-blue-600 text-base font-extrabold text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                Cobrar
+                Cobrar {money(orderTotal)}
               </button>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={handleReopen}
                   disabled={working}
-                  className="h-11 rounded-xl border border-slate-50/35 text-sm font-bold disabled:opacity-50"
+                  className="h-12 rounded-xl border text-sm font-bold text-slate-900 hover:bg-slate-100 disabled:opacity-50"
                 >
                   Reabrir mesa
                 </button>
                 <button
                   type="button"
                   onClick={handlePrecuenta}
-                  className="h-11 rounded-xl border border-slate-50/35 text-sm font-bold flex items-center justify-center gap-1.5"
+                  className="flex h-12 items-center justify-center gap-1.5 rounded-xl border text-sm font-bold text-slate-900 hover:bg-slate-100"
                 >
                   <Receipt size={16} aria-hidden="true" />
                   Ticket parcial
                 </button>
               </div>
-            </div>
+            </>
           ) : (
-            <div className="mt-3 space-y-2">
+            <>
               <button
                 type="button"
                 onClick={handleSend}
                 disabled={cart.length === 0 || working}
-                className="h-14 w-full rounded-2xl bg-slate-50 text-lg font-extrabold text-slate-900 flex items-center justify-center gap-2 disabled:opacity-40"
+                className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-base font-extrabold text-white hover:bg-blue-700 disabled:opacity-40"
               >
-                <Send size={20} aria-hidden="true" />
-                {working && cart.length > 0 ? 'Enviando…' : 'Enviar comanda'}
+                <Send size={19} aria-hidden="true" />
+                {working && cart.length > 0
+                  ? 'Enviando…'
+                  : cart.length > 0
+                    ? `Enviar ${cart.reduce((a, i) => a + i.quantity, 0)} a barra y cocina`
+                    : 'Enviar comanda'}
               </button>
               {hasSentItems && (
                 <div className="grid grid-cols-2 gap-2">
@@ -521,23 +581,23 @@ export default function OrderMenu({ tableId }: { tableId: string }) {
                     onClick={handleRequestBill}
                     disabled={working || cart.length > 0}
                     title={cart.length > 0 ? 'Envía o quita el nuevo pedido primero' : undefined}
-                    className="h-11 rounded-xl border border-slate-50/35 text-sm font-bold disabled:opacity-40"
+                    className="h-12 rounded-xl border text-sm font-bold text-slate-900 hover:bg-slate-100 disabled:opacity-40"
                   >
                     Pedir cuenta
                   </button>
                   <button
                     type="button"
                     onClick={handlePrecuenta}
-                    className="h-11 rounded-xl border border-slate-50/35 text-sm font-bold flex items-center justify-center gap-1.5"
+                    className="flex h-12 items-center justify-center gap-1.5 rounded-xl border text-sm font-bold text-slate-900 hover:bg-slate-100"
                   >
                     <Receipt size={16} aria-hidden="true" />
                     Ticket parcial
                   </button>
                 </div>
               )}
-            </div>
+            </>
           )}
-        </div>
+        </footer>
       </aside>
 
       {payOpen && openOrder && (

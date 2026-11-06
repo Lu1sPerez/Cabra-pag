@@ -90,6 +90,7 @@ export function tableStyle(t: Pick<FloorTable, 'pos_x' | 'pos_y' | 'width' | 'he
 }
 
 export const CANVAS_GRID_STYLE = {
-  backgroundImage: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px)',
+  // Puntos del plano: siguen el tema (variable --dot de globals.css)
+  backgroundImage: 'radial-gradient(circle, rgb(var(--dot)) 1px, transparent 1px)',
   backgroundSize: `${(20 / CANVAS_W) * 100}% ${(20 / CANVAS_H) * 100}%`,
 };

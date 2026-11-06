@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Download, Share2, X } from 'lucide-react';
+import { ArrowLeftRight, Banknote, Check, ChevronLeft, CreditCard, Delete, Download, QrCode, Share2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
@@ -16,6 +16,7 @@ import {
   adjustmentFor,
   adjustmentLabel,
   getPaymentMethods,
+  type MethodKind,
   type PaymentMethodRow,
 } from '@/actions/payment-methods-actions';
 import { downloadTicket, shareTicket, ticketTotals, type TicketData } from '@/lib/ticket';
@@ -36,6 +37,12 @@ const QUICK_PERCENTS = [5, 10, 15, 20];
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const money = (n: number) => `$ ${n.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
+// "26600,5" -> "26.600,5" (lo que se ve en los campos de monto)
+const groupThousands = (raw: string) => {
+  const [int, dec] = raw.split(',');
+  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return dec !== undefined ? `${grouped},${dec}` : grouped;
+};
 const parseNumber = (raw: string) => {
   const n = Number(raw.trim().replace(/\./g, '').replace(',', '.'));
   return Number.isFinite(n) ? n : NaN;
@@ -324,6 +331,18 @@ export default function PaymentPanel({
       return next;
     });
 
+  // Teclado numérico: en "Por monto" escribe el monto; si no, lo que entrega en efectivo
+  const keypadTarget: 'amount' | 'cash' | null = mode === 'amount' ? 'amount' : isCash ? 'cash' : null;
+  const pressKey = (key: string) => {
+    const setter = keypadTarget === 'amount' ? setAmountRaw : keypadTarget === 'cash' ? setCashGiven : null;
+    if (!setter) return;
+    setter((prev) => {
+      if (key === 'back') return prev.slice(0, -1);
+      const next = (prev + key).replace(/^0+(?=\d)/, '');
+      return next.length > 9 ? prev : next;
+    });
+  };
+
   // ---------------------------------------------------------------------------
   // Cobro terminado
 
@@ -331,9 +350,9 @@ export default function PaymentPanel({
     const data = ticketFor(done.payments, done.discount, done.reason);
     const t = ticketTotals(data);
     return (
-      <Overlay onBackdrop={onFinished} busy={busy}>
-        <div className="p-6 sm:p-8 space-y-5">
-          <div className="h-14 w-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center">
+      <Overlay>
+        <div className="mx-auto flex w-full max-w-xl flex-col gap-5 p-5 sm:p-8">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-ok-bg text-ok-fg">
             <Check size={28} aria-hidden="true" />
           </div>
           <div>
@@ -343,29 +362,29 @@ export default function PaymentPanel({
             <p className="mt-1 text-slate-600">{tableName} · la mesa quedó libre</p>
           </div>
 
-          <dl className="rounded-2xl border bg-white p-4 grid grid-cols-[1fr_auto] gap-y-1 text-sm">
+          <dl className="grid grid-cols-[1fr_auto] gap-y-1.5 rounded-2xl border bg-surface p-4 text-sm">
             <dt className="text-slate-600">Subtotal</dt>
-            <dd className="text-right tabular-nums">{money(t.subtotal)}</dd>
+            <dd className="text-right tabular-nums text-slate-900">{money(t.subtotal)}</dd>
             {done.discount > 0 && (
               <>
                 <dt className="text-slate-600">Descuento{done.reason ? ` · ${done.reason}` : ''}</dt>
-                <dd className="text-right tabular-nums">− {money(done.discount)}</dd>
+                <dd className="text-right tabular-nums text-slate-900">− {money(done.discount)}</dd>
               </>
             )}
             {t.adjustments !== 0 && (
               <>
                 <dt className="text-slate-600">{t.adjustments > 0 ? 'Recargos' : 'Descuentos por medio de pago'}</dt>
-                <dd className="text-right tabular-nums">{t.adjustments > 0 ? '' : '− '}{money(Math.abs(t.adjustments))}</dd>
+                <dd className="text-right tabular-nums text-slate-900">{t.adjustments > 0 ? '' : '− '}{money(Math.abs(t.adjustments))}</dd>
               </>
             )}
             {done.payments.map((p) => (
               <Fragmentless key={p.id}>
                 <dt className="text-slate-600">{p.method_name}</dt>
-                <dd className="text-right tabular-nums">{money(p.amount)}</dd>
+                <dd className="text-right tabular-nums text-slate-900">{money(p.amount)}</dd>
               </Fragmentless>
             ))}
-            <dt className="pt-2 mt-1 border-t font-bold text-slate-900">Total cobrado</dt>
-            <dd className="pt-2 mt-1 border-t text-right font-display text-2xl font-extrabold text-slate-900 tabular-nums">
+            <dt className="mt-1 border-t pt-2 font-bold text-slate-900">Total cobrado</dt>
+            <dd className="mt-1 border-t pt-2 text-right font-display text-2xl font-extrabold tabular-nums text-slate-900">
               {money(t.total)}
             </dd>
           </dl>
@@ -377,7 +396,7 @@ export default function PaymentPanel({
                 <Download size={18} aria-hidden="true" />
                 Descargar ticket
               </Button>
-              <Button variant="outline" className="h-12 border-2 border-blue-600 text-blue-700" onClick={() => share(data)}>
+              <Button variant="outline" className="h-12" onClick={() => share(data)}>
                 <Share2 size={18} aria-hidden="true" />
                 Compartir
               </Button>
@@ -388,9 +407,13 @@ export default function PaymentPanel({
             {notice && <p className="text-sm text-green-800">{notice}</p>}
           </div>
 
-          <Button className="w-full h-12 bg-slate-900 hover:bg-slate-800" onClick={onFinished}>
+          <button
+            type="button"
+            onClick={onFinished}
+            className="h-12 w-full rounded-xl bg-slate-900 text-[15px] font-extrabold text-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          >
             Volver al salón
-          </Button>
+          </button>
         </div>
       </Overlay>
     );
@@ -399,47 +422,92 @@ export default function PaymentPanel({
   // ---------------------------------------------------------------------------
   // Cobro
 
-  return (
-    <Overlay onBackdrop={onClose} busy={busy}>
-      <div className="p-5 sm:p-7 space-y-5">
-        <header className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-bold text-slate-500">{hasPayments ? 'Cobro en curso' : 'Pidió la cuenta'}</p>
-            <h2 id="payment-title" className="font-display text-3xl font-extrabold tracking-tight text-slate-900">
-              Cobrar {tableName}
-            </h2>
-          </div>
-          <div className="text-right">
-            <p className="text-sm text-slate-500">
-              {discount > 0 ? `Total con descuento (${money(discount)})` : 'Total'}
-            </p>
-            <p className="font-display text-3xl font-extrabold text-slate-900 tabular-nums">{money(net)}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            aria-label="Cerrar"
-            className="-mr-2 -mt-2 h-11 w-11 shrink-0 rounded-xl text-slate-500 hover:bg-slate-100 flex items-center justify-center"
-          >
-            <X size={20} />
-          </button>
-        </header>
+  const progress = net > 0 ? Math.min(100, (paidBase / net) * 100) : 0;
+  const payLabel = busy
+    ? 'Cobrando…'
+    : base <= 0
+      ? mode === 'items'
+        ? 'Marca qué productos paga'
+        : mode === 'amount'
+          ? 'Ingresa el monto'
+          : 'Nada por cobrar'
+      : `${mode === 'all' || base >= due ? 'Cobrar' : `Cobrar parte ${payments.length + 1}`} ${money(charged)}${method ? ` · ${method.name}` : ''}`;
 
-        {loading ? (
-          <p className="text-slate-500">Cargando…</p>
-        ) : (
-          <>
+  return (
+    <Overlay>
+      {/* Barra superior del cobro */}
+      <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-3 border-b bg-bar px-3 sm:px-5">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          className="flex h-11 items-center gap-1.5 rounded-xl border pl-2.5 pr-3.5 text-sm font-bold text-slate-900 hover:bg-slate-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          <ChevronLeft size={18} aria-hidden="true" />
+          {hasPayments ? 'Seguir después' : tableName}
+        </button>
+        <h2 id="payment-title" className="font-display text-2xl font-extrabold tracking-tight text-slate-900">
+          Cobrar {tableName}
+        </h2>
+        <div className="flex-1" />
+        {staffName && <span className="hidden text-sm font-semibold text-slate-500 sm:inline">{staffName}</span>}
+      </header>
+
+      {loading ? (
+        <p className="p-6 text-slate-500">Cargando…</p>
+      ) : (
+        <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5 p-4 sm:p-6 lg:flex-row">
+          {/* Columna izquierda: cuenta, forma de cobro y medio de pago */}
+          <div className="flex min-w-0 flex-1 flex-col gap-4">
+            <section aria-label="Estado de la cuenta" className="space-y-3 rounded-2xl border bg-surface p-5">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-extrabold tracking-[0.06em] text-slate-500">
+                    {discount > 0 ? `TOTAL CON DESCUENTO (${money(discount)})` : 'TOTAL DE LA CUENTA'}
+                  </p>
+                  <p className="font-display text-[44px] font-extrabold leading-none tracking-tight tabular-nums text-slate-900">{money(net)}</p>
+                </div>
+                {hasPayments && (
+                  <div className="text-right">
+                    <p className="text-[11px] font-extrabold tracking-[0.06em] text-slate-500">FALTA COBRAR</p>
+                    <p className="font-display text-3xl font-extrabold tabular-nums text-warn">{money(due)}</p>
+                  </div>
+                )}
+              </div>
+              {(hasPayments || mode !== 'all') && (
+                <>
+                  <div
+                    role="progressbar"
+                    aria-label="Cobrado de la cuenta"
+                    aria-valuemin={0}
+                    aria-valuemax={net}
+                    aria-valuenow={paidBase}
+                    className="h-2 overflow-hidden rounded-full bg-slate-100"
+                  >
+                    <div className="h-full rounded-full bg-blue-600" style={{ width: `${progress}%` }} />
+                  </div>
+                  <p className="text-[13px] text-slate-500">
+                    Cobrado <strong className="tabular-nums text-slate-900">{money(paidBase)}</strong> de {money(net)}
+                    {hasPayments ? ` · ${payments.length} ${payments.length === 1 ? 'pago' : 'pagos'}` : ''}
+                  </p>
+                </>
+              )}
+            </section>
+
             {/* Descuento: solo antes del primer pago */}
             {!hasPayments &&
               (!discountOpen ? (
-                <Button type="button" variant="outline" size="sm" onClick={() => setDiscountOpen(true)}>
-                  Aplicar descuento
-                </Button>
+                <button
+                  type="button"
+                  onClick={() => setDiscountOpen(true)}
+                  className="self-start rounded-lg px-1 text-sm font-bold text-blue-600 underline-offset-4 hover:underline"
+                >
+                  + Aplicar descuento
+                </button>
               ) : (
-                <fieldset className="rounded-xl border bg-white p-3 space-y-3">
+                <fieldset className="space-y-3 rounded-2xl border bg-surface p-4">
                   <div className="flex items-center justify-between">
-                    <legend className="text-sm font-bold text-slate-700">Descuento</legend>
+                    <legend className="text-sm font-extrabold text-slate-900">Descuento</legend>
                     <button
                       type="button"
                       onClick={() => {
@@ -447,7 +515,7 @@ export default function PaymentPanel({
                         setDiscountValue('');
                         setDiscountReason('');
                       }}
-                      className="text-sm text-slate-500 hover:text-slate-800 hover:underline"
+                      className="text-sm font-semibold text-slate-500 hover:text-slate-900 hover:underline"
                     >
                       Quitar
                     </button>
@@ -465,7 +533,7 @@ export default function PaymentPanel({
                           }}
                           className={cn(
                             'h-10 rounded-md px-4 text-sm font-bold',
-                            discountMode === m ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
+                            discountMode === m ? 'bg-surface text-slate-900 shadow-sm' : 'text-slate-500'
                           )}
                         >
                           {m === 'percent' ? '%' : '$'}
@@ -479,7 +547,7 @@ export default function PaymentPanel({
                       onChange={(e) => setDiscountValue(e.target.value)}
                       placeholder={discountMode === 'percent' ? 'Porcentaje' : 'Monto'}
                       aria-label={discountMode === 'percent' ? 'Porcentaje de descuento' : 'Monto de descuento'}
-                      className="h-11 w-32 rounded-lg border px-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="h-11 w-32 rounded-lg border bg-slate-50 px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     {discountMode === 'percent' &&
                       QUICK_PERCENTS.map((p) => (
@@ -501,14 +569,14 @@ export default function PaymentPanel({
                     onChange={(e) => setDiscountReason(e.target.value)}
                     placeholder="Motivo (opcional): cliente frecuente, cortesía…"
                     aria-label="Motivo del descuento"
-                    className="h-11 w-full rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="h-11 w-full rounded-lg border bg-slate-50 px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   {discountError && <p className="text-sm text-red-700">{discountError}</p>}
                 </fieldset>
               ))}
 
             {/* Forma de cobro */}
-            <div role="tablist" aria-label="Forma de cobro" className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
+            <div role="tablist" aria-label="Forma de cobro" className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 sm:grid-cols-4">
               {MODES.map((m) => (
                 <button
                   key={m.id}
@@ -522,7 +590,7 @@ export default function PaymentPanel({
                   }}
                   className={cn(
                     'h-11 rounded-lg text-sm font-bold transition-colors',
-                    mode === m.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                    mode === m.id ? 'bg-surface text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
                   )}
                 >
                   {m.label}
@@ -530,61 +598,39 @@ export default function PaymentPanel({
               ))}
             </div>
 
-            {/* Progreso */}
-            {(hasPayments || mode !== 'all') && (
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-sm">
-                  <span>
-                    Cobrado <strong className="tabular-nums">{money(paidBase)}</strong> de {money(net)}
-                  </span>
-                  <strong className="text-slate-900">Falta {money(due)}</strong>
-                </div>
-                <div
-                  role="progressbar"
-                  aria-label="Cobrado de la cuenta"
-                  aria-valuemin={0}
-                  aria-valuemax={net}
-                  aria-valuenow={paidBase}
-                  className="h-2.5 rounded-full bg-slate-200 overflow-hidden"
-                >
-                  <div className="h-full rounded-full bg-blue-600" style={{ width: `${net > 0 ? (paidBase / net) * 100 : 0}%` }} />
-                </div>
-              </div>
-            )}
-
             {mode === 'equal' && (
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3 rounded-2xl border bg-surface p-4">
                 <span className="text-sm font-bold text-slate-900">Dividir entre</span>
                 <button
                   type="button"
                   aria-label="Una persona menos"
                   onClick={() => setParts((n) => Math.max(Math.max(2, payments.length + 1), n - 1))}
-                  className="h-11 w-11 rounded-xl border bg-white text-xl"
+                  className="h-11 w-11 rounded-xl border text-xl text-slate-900 hover:bg-slate-100"
                 >
                   −
                 </button>
-                <span className="font-display text-2xl font-extrabold w-8 text-center">{parts}</span>
+                <span className="w-8 text-center font-display text-2xl font-extrabold text-slate-900">{parts}</span>
                 <button
                   type="button"
                   aria-label="Una persona más"
                   onClick={() => setParts((n) => Math.min(20, n + 1))}
-                  className="h-11 w-11 rounded-xl border bg-white text-xl"
+                  className="h-11 w-11 rounded-xl border text-xl text-slate-900 hover:bg-slate-100"
                 >
                   +
                 </button>
-                <span className="text-sm text-slate-600">
+                <span className="text-sm text-slate-500">
                   personas · {partsLeft === 1 ? 'última parte' : `${partsLeft} partes por cobrar`}
                 </span>
               </div>
             )}
 
             {mode === 'items' && (
-              <fieldset className="rounded-xl border bg-white px-4 py-2 max-h-56 overflow-y-auto">
-                <legend className="px-1 text-sm font-bold text-slate-600">Marca lo que paga esta persona</legend>
+              <fieldset className="max-h-64 overflow-y-auto rounded-2xl border bg-surface px-4 py-2">
+                <legend className="px-1 text-sm font-bold text-slate-500">Marca lo que paga esta persona</legend>
                 {units.map((u) => (
                   <label
                     key={u.key}
-                    className={cn('flex items-center gap-3 min-h-[48px] border-b last:border-0', u.paid && 'opacity-50')}
+                    className={cn('flex min-h-[48px] items-center gap-3 border-b last:border-0', u.paid && 'opacity-50')}
                   >
                     <input
                       type="checkbox"
@@ -597,70 +643,26 @@ export default function PaymentPanel({
                       {u.name}
                       {u.paid && <span className="ml-2 font-normal text-slate-500">ya cobrado</span>}
                     </span>
-                    <span className="text-sm tabular-nums">{money(u.price)}</span>
+                    <span className="text-sm tabular-nums text-slate-900">{money(u.price)}</span>
                   </label>
                 ))}
               </fieldset>
-            )}
-
-            {mode === 'amount' && (
-              <div className="space-y-2 rounded-xl border bg-white p-4">
-                <label className="block">
-                  <span className="text-sm font-bold text-slate-900">¿Cuánto paga con este medio?</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={amountRaw}
-                    onChange={(e) => setAmountRaw(e.target.value.replace(/[^\d.,]/g, ''))}
-                    placeholder={`Hasta ${money(due)}`}
-                    aria-invalid={!!amountError}
-                    className="mt-1 h-12 w-full max-w-xs rounded-lg border px-3 text-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {amountShortcuts.map((s) => (
-                    <Button
-                      key={s.label}
-                      type="button"
-                      variant="outline"
-                      className="h-10"
-                      onClick={() => setAmountRaw(String(s.value).replace('.', ','))}
-                    >
-                      {s.label}
-                    </Button>
-                  ))}
-                </div>
-                {amountError ? (
-                  <p className="text-sm text-red-700">{amountError}</p>
-                ) : base > 0 && base < due ? (
-                  <p className="text-sm text-slate-600">
-                    Después de este pago quedan <strong className="text-slate-900">{money(round2(due - base))}</strong> por cobrar.
-                  </p>
-                ) : null}
-                {base > 0 && adjustment !== 0 && method && (
-                  <p className="text-sm text-slate-600">
-                    {method.name} {adjustment > 0 ? 'tiene recargo' : 'tiene descuento'}: se cobran{' '}
-                    <strong className="text-slate-900">{money(charged)}</strong> y se descuentan {money(base)} de la cuenta.
-                  </p>
-                )}
-              </div>
             )}
 
             {/* Pagos registrados */}
             {hasPayments && (
               <ul className="space-y-2">
                 {payments.map((p, i) => (
-                  <li key={p.id} className="flex flex-wrap items-center gap-3 rounded-xl border bg-white px-4 py-2.5">
-                    <span className="h-8 w-8 rounded-lg bg-blue-100 text-slate-900 flex items-center justify-center">
+                  <li key={p.id} className="flex flex-wrap items-center gap-3 rounded-xl border bg-surface px-4 py-2.5">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ok-bg text-ok-fg">
                       <Check size={16} aria-hidden="true" />
                     </span>
-                    <span className="flex-1 min-w-0">
+                    <span className="min-w-0 flex-1">
                       <strong className="text-sm text-slate-900">
-                        Pago {i + 1} · {money(p.amount)}
+                        Pago {i + 1} · {p.method_name} · {money(p.amount)}
                       </strong>
-                      <span className="block text-xs text-slate-600">
-                        {p.method_name}
-                        {p.adjustment > 0 ? ` · recargo ${money(p.adjustment)}` : ''}
+                      <span className="block text-xs text-slate-500">
+                        {p.adjustment > 0 ? `Recargo ${money(p.adjustment)}` : 'Sin recargo'}
                         {p.cash_given != null && p.cash_given > p.amount
                           ? ` · pagó con ${money(p.cash_given)}, vuelto ${money(round2(p.cash_given - p.amount))}`
                           : ''}
@@ -673,13 +675,7 @@ export default function PaymentPanel({
                     >
                       Ticket
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-red-700 hover:bg-red-50"
-                      disabled={busy}
-                      onClick={() => cancelPayment(p)}
-                    >
+                    <Button size="sm" variant="ghost" className="text-red-700 hover:bg-red-50" disabled={busy} onClick={() => cancelPayment(p)}>
                       Anular
                     </Button>
                   </li>
@@ -688,117 +684,209 @@ export default function PaymentPanel({
             )}
 
             {/* Medio de pago */}
-            <div className="space-y-2">
-              <p className="text-sm font-bold text-slate-600">
+            <section aria-labelledby="medio-titulo" className="space-y-2.5">
+              <h3 id="medio-titulo" className="text-[11px] font-extrabold tracking-[0.06em] text-slate-500">
                 {mode === 'equal'
-                  ? `Parte ${payments.length + 1}: ¿cómo paga?`
+                  ? `PARTE ${payments.length + 1}: ¿CÓMO PAGA?`
                   : mode === 'amount'
-                    ? '¿Con qué medio paga ese monto?'
-                    : '¿Cómo paga?'}
-              </p>
+                    ? '¿CON QUÉ MEDIO PAGA ESE MONTO?'
+                    : '¿CÓMO PAGA?'}
+              </h3>
               {methods.length === 0 ? (
                 <p className="text-sm text-red-700">
-                  No hay medios de pago activos. El administrador puede cargarlos en Ajustes › Medios de pago.
+                  No hay medios de pago activos. El administrador puede cargarlos en Más › Medios de pago.
                 </p>
               ) : (
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                  {methods.map((m) => {
+                    const Icon = METHOD_ICONS[m.kind] ?? Wallet;
+                    const selectedMethod = methodId === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        aria-pressed={selectedMethod}
+                        onClick={() => setMethodId(m.id)}
+                        className={cn(
+                          'flex h-[72px] items-center gap-3 rounded-xl px-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+                          selectedMethod ? 'border-2 border-blue-600 bg-blue-50 px-[13px]' : 'border bg-surface hover:bg-slate-100'
+                        )}
+                      >
+                        <Icon size={22} aria-hidden="true" className="shrink-0 text-slate-900" />
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate text-[15px] font-extrabold text-slate-900">{m.name}</span>
+                          <span className="text-xs text-slate-500">{adjustmentLabel(m) ? `Ajuste ${adjustmentLabel(m)}` : 'Sin recargo'}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
+
+          {/* Columna derecha: monto, efectivo y cobrar */}
+          <section aria-label="Este pago" className="flex w-full shrink-0 flex-col gap-3 rounded-2xl border bg-surface p-5 lg:sticky lg:top-[88px] lg:w-[420px] lg:self-start">
+            {mode === 'amount' ? (
+              <label className="flex flex-col gap-2">
+                <span className="text-[11px] font-extrabold tracking-[0.06em] text-slate-500">MONTO DE ESTE PAGO</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={groupThousands(amountRaw)}
+                  onChange={(e) => setAmountRaw(e.target.value.replace(/[^\d,]/g, ''))}
+                  placeholder={`Hasta ${money(due)}`}
+                  aria-invalid={!!amountError}
+                  className="h-[72px] rounded-xl border-2 border-blue-600 bg-slate-50 px-4 text-right font-display text-[40px] font-extrabold tabular-nums text-slate-900 placeholder:text-xl placeholder:font-bold focus:outline-none"
+                />
+              </label>
+            ) : (
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-extrabold tracking-[0.06em] text-slate-500">
+                  {mode === 'all' ? 'A COBRAR' : 'ESTE PAGO'}
+                </span>
+                <span className="font-display text-[40px] font-extrabold leading-tight tabular-nums text-slate-900">{money(charged)}</span>
+                {adjustment !== 0 && method && (
+                  <span className="text-[13px] text-slate-500">
+                    Incluye {adjustment > 0 ? 'recargo' : 'descuento'} de {money(Math.abs(adjustment))} por {method.name}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {mode === 'amount' && (
+              <>
                 <div className="flex flex-wrap gap-2">
-                  {methods.map((m) => (
+                  {amountShortcuts.map((sc) => (
                     <button
-                      key={m.id}
+                      key={sc.label}
                       type="button"
-                      aria-pressed={methodId === m.id}
-                      onClick={() => setMethodId(m.id)}
-                      className={cn(
-                        'h-11 rounded-xl px-4 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
-                        methodId === m.id
-                          ? 'border-2 border-blue-600 bg-blue-50 text-slate-900'
-                          : 'border bg-white text-slate-800 hover:bg-slate-50'
-                      )}
+                      onClick={() => setAmountRaw(String(sc.value).replace('.', ','))}
+                      className="h-10 rounded-lg border px-3 text-[13px] font-bold text-slate-900 hover:bg-slate-100"
                     >
-                      {m.name}
-                      {adjustmentLabel(m) && <span className="ml-1 font-semibold text-slate-500">{adjustmentLabel(m)}</span>}
+                      {sc.label}
                     </button>
                   ))}
                 </div>
-              )}
-            </div>
+                {amountError ? (
+                  <p className="text-sm text-red-700">{amountError}</p>
+                ) : base > 0 && base < due ? (
+                  <p className="text-sm text-slate-500">
+                    Después quedan <strong className="text-slate-900">{money(round2(due - base))}</strong> por cobrar.
+                  </p>
+                ) : null}
+                {base > 0 && adjustment !== 0 && method && (
+                  <p className="text-sm text-slate-500">
+                    Con {method.name} se cobran <strong className="text-slate-900">{money(charged)}</strong>.
+                  </p>
+                )}
+              </>
+            )}
 
             {isCash && base > 0 && (
-              <div className="flex flex-wrap items-end gap-2">
-                <label className="block">
-                  <span className="text-sm font-bold text-slate-600">Paga con</span>
+              <div className="space-y-2 rounded-xl bg-slate-100 p-3">
+                <label className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-bold text-slate-900">Paga con</span>
                   <input
                     type="text"
                     inputMode="numeric"
-                    value={cashGiven}
+                    value={groupThousands(cashGiven)}
                     onChange={(e) => setCashGiven(e.target.value.replace(/[^\d,]/g, ''))}
-                    placeholder={String(charged)}
-                    className="mt-1 h-11 w-36 rounded-lg border px-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder={money(charged)}
+                    className="h-11 w-40 rounded-lg border bg-surface px-3 text-right text-lg font-bold tabular-nums text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </label>
-                <Button type="button" variant="outline" className="h-11" onClick={() => setCashGiven(String(charged).replace('.', ','))}>
-                  Justo
-                </Button>
-                {suggestions.map((v) => (
-                  <Button key={v} type="button" variant="outline" className="h-11" onClick={() => setCashGiven(String(v))}>
-                    {money(v)}
-                  </Button>
-                ))}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCashGiven(String(charged).replace('.', ','))}
+                    className="h-9 rounded-lg border bg-surface px-3 text-[13px] font-bold text-slate-900"
+                  >
+                    Justo
+                  </button>
+                  {suggestions.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setCashGiven(String(v))}
+                      className="h-9 rounded-lg border bg-surface px-3 text-[13px] font-bold text-slate-900"
+                    >
+                      {money(v)}
+                    </button>
+                  ))}
+                </div>
                 {cashGiven !== '' && (
-                  <p className={cn('w-full text-lg font-bold', cashTooLow ? 'text-red-700' : 'text-green-800')}>
+                  <p className={cn('text-lg font-extrabold', cashTooLow ? 'text-red-700' : 'text-green-800')}>
                     {cashTooLow ? `Faltan ${money(round2(charged - given))}` : `Vuelto: ${money(round2(given - charged))}`}
                   </p>
                 )}
               </div>
             )}
 
-            {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-            {notice && <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">{notice}</p>}
+            {keypadTarget && (
+              <div className="grid grid-cols-3 gap-2" aria-label={keypadTarget === 'amount' ? 'Teclado del monto' : 'Teclado del efectivo'}>
+                {['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0'].map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => pressKey(k)}
+                    className="h-14 rounded-xl bg-slate-100 font-display text-2xl font-bold text-slate-900 hover:bg-slate-200 active:bg-slate-300"
+                  >
+                    {k}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  aria-label="Borrar"
+                  onClick={() => pressKey('back')}
+                  className="flex h-14 items-center justify-center rounded-xl bg-slate-100 text-slate-900 hover:bg-slate-200 active:bg-slate-300"
+                >
+                  <Delete size={24} aria-hidden="true" />
+                </button>
+              </div>
+            )}
 
-            <div className="flex flex-wrap gap-2 pt-1">
-              <Button type="button" variant="outline" className="h-12" onClick={onClose} disabled={busy}>
-                {hasPayments ? 'Seguir después' : 'Cancelar'}
-              </Button>
-              <Button type="button" className="h-12 flex-1 text-base" onClick={pay} disabled={!canPay}>
-                {busy
-                  ? 'Cobrando…'
-                  : base <= 0
-                    ? mode === 'items'
-                      ? 'Marca qué productos paga'
-                      : mode === 'amount'
-                        ? 'Ingresa el monto'
-                        : 'Nada por cobrar'
-                    : `${mode === 'all' || base >= due ? 'Cobrar' : `Cobrar parte ${payments.length + 1}`} · ${money(charged)}`}
-              </Button>
-            </div>
+            {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+            {notice && <p role="status" className="rounded-lg bg-ok-bg px-3 py-2 text-sm font-semibold text-ok-fg">{notice}</p>}
+
+            <button
+              type="button"
+              onClick={pay}
+              disabled={!canPay}
+              className="mt-1 h-14 w-full rounded-xl bg-blue-600 px-3 text-base font-extrabold text-white hover:bg-blue-700 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            >
+              {payLabel}
+            </button>
             {hasPayments && (
               <p className="text-xs text-slate-500">
-                La mesa sigue en "Por pagar" hasta completar el total. Puedes cerrar y seguir cobrando después.
+                La mesa sigue en "Por pagar" hasta completar el total. Puedes salir y seguir cobrando después.
               </p>
             )}
-          </>
-        )}
-      </div>
+          </section>
+        </div>
+      )}
     </Overlay>
   );
 }
 
-// Fondo oscuro + ventana
-function Overlay({ children, onBackdrop, busy }: { children: React.ReactNode; onBackdrop: () => void; busy: boolean }) {
+const METHOD_ICONS: Record<MethodKind, typeof Wallet> = {
+  cash: Banknote,
+  card: CreditCard,
+  wallet: QrCode,
+  transfer: ArrowLeftRight,
+  other: Wallet,
+};
+
+// Pantalla completa del cobro
+function Overlay({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/50 p-3 sm:p-6"
-      onClick={() => !busy && onBackdrop()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="payment-title"
+      className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-slate-50"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="payment-title"
-        className="w-full max-w-3xl max-h-[calc(100vh-1.5rem)] overflow-y-auto rounded-3xl bg-slate-50 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
+      {children}
     </div>
   );
 }

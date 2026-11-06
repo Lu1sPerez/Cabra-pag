@@ -136,7 +136,7 @@ export function ColumnChart({
                     {/* Tooltip */}
                     <div
                       role="presentation"
-                      className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2.5 py-1.5 text-xs text-white shadow-lg group-hover:block group-focus-within:block"
+                      className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2.5 py-1.5 text-xs text-slate-50 shadow-lg group-hover:block group-focus-within:block"
                     >
                       <p className="font-semibold">{d.tooltipTitle}</p>
                       <p className="tabular-nums">{formatValue(d.value)}</p>

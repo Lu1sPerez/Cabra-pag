@@ -2,35 +2,59 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { Check, Clock, Receipt, UtensilsCrossed } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/browser';
 import { useRealTimeTables } from '@/hooks/UseRealTimeTables';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getCachedMenu, getMenu, getOpenOrdersSummary, type OpenOrderSummary } from '@/actions/order-actions';
+import { listActiveStaff } from '@/actions/staff-actions';
 import { useResync } from '@/hooks/useResync';
-import { CANVAS_GRID_STYLE, STATUS_LABELS, tableStyle, type FloorTable, type TableStatus } from '@/lib/floor';
+import { tableStyle, type FloorTable, type TableStatus } from '@/lib/floor';
 
+// Puntos del plano (siguen el tema)
+const FLOOR_DOTS = { backgroundImage: 'radial-gradient(circle, rgb(var(--dot)) 1px, transparent 1px)', backgroundSize: '22px 22px' };
+
+type Metric = 'total' | 'time' | 'staff';
+
+const METRICS: { id: Metric; label: string }[] = [
+  { id: 'total', label: 'Total' },
+  { id: 'time', label: 'Tiempo' },
+  { id: 'staff', label: 'Mozo' },
+];
+
+// Colores planos, sin brillo: libre (contorno), ocupada (azul de la marca), cuenta (ámbar)
 const STYLES: Record<TableStatus, string> = {
-  free: 'bg-[#E3E9DF] border-[#8FA58B] text-[#2F4732] hover:bg-[#D9E2D4]',
-  occupied: 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700',
-  paying: 'bg-[#F2C14E] border-[#D9A62E] text-[#2B2108] hover:bg-[#EDB937]',
+  free: 'bg-surface border-slate-300 text-slate-900 hover:border-slate-500',
+  occupied: 'bg-blue-600 border-transparent text-white hover:bg-blue-700',
+  paying: 'bg-cuenta border-transparent text-cuenta-fg hover:brightness-95',
 };
 
-const SWATCH: Record<TableStatus, string> = {
-  occupied: 'bg-blue-600',
-  paying: 'bg-[#F2C14E]',
-  free: 'bg-[#E3E9DF] border-2 border-[#8FA58B]',
-};
+const LEGEND: { status: TableStatus; label: string; swatch: string }[] = [
+  { status: 'free', label: 'Libre', swatch: 'border-[1.5px] border-slate-400 bg-surface' },
+  { status: 'occupied', label: 'Ocupada', swatch: 'bg-blue-600' },
+  { status: 'paying', label: 'Pidió la cuenta', swatch: 'bg-cuenta' },
+];
 
-const ORDER: TableStatus[] = ['occupied', 'paying', 'free'];
+// Avisos del panel "Ahora"
+const NO_ORDER_MIN = 10; // sentados sin pedir nada
+const IDLE_MIN = 40; // sin pedir nada nuevo
 
 const money = (n: number) => `$ ${Math.round(n).toLocaleString('es-AR')}`;
 
-function elapsed(fromIso: string, now: number) {
-  const min = Math.max(0, Math.floor((now - new Date(fromIso).getTime()) / 60000));
-  if (min < 60) return `${min} min`;
-  return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`;
-}
+const minutesSince = (iso: string | null | undefined, now: number) =>
+  iso ? Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60000)) : 0;
+
+const fmtMinutes = (min: number) => (min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`);
+
+type Alert = {
+  key: string;
+  kind: 'cuenta' | 'sinpedido' | 'demora';
+  table: FloorTable;
+  title: string;
+  detail: string;
+  minutes: number;
+};
 
 export default function TableGrid() {
   const { zones, loading, error, connected } = useRealTimeTables();
@@ -38,8 +62,11 @@ export default function TableGrid() {
   const isAdmin = role === 'admin';
 
   const [orders, setOrders] = useState<Map<string, OpenOrderSummary>>(new Map());
+  const [staffNames, setStaffNames] = useState<Map<string, string>>(new Map());
   const [cobrado, setCobrado] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [zoneId, setZoneId] = useState<string | null>(null);
+  const [metric, setMetric] = useState<Metric>('total');
   const [pulsing, setPulsing] = useState<Set<string>>(new Set());
   const prevStatus = useRef<Map<string, TableStatus> | null>(null);
 
@@ -60,8 +87,19 @@ export default function TableGrid() {
     }
   }, [isAdmin]);
 
+  // Nombres de los mozos, para la inicial de cada mesa
+  const loadStaff = useCallback(async () => {
+    try {
+      const list = await listActiveStaff();
+      setStaffNames(new Map(list.map((s) => [s.id, s.name])));
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
   useEffect(() => {
     loadLive();
+    loadStaff();
     const supabase = createClient();
     let timer: ReturnType<typeof setTimeout> | null = null;
     let subscribedOnce = false;
@@ -81,7 +119,7 @@ export default function TableGrid() {
       if (timer) clearTimeout(timer);
       supabase.removeChannel(channel);
     };
-  }, [loadLive]);
+  }, [loadLive, loadStaff]);
 
   // El iPad se despertó o volvió internet: hora y consumos al día
   const resync = useCallback(() => {
@@ -95,13 +133,13 @@ export default function TableGrid() {
     if (!getCachedMenu()) getMenu().catch(() => {});
   }, []);
 
-  // Reloj y minutos
+  // Minutos de cada mesa
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(id);
   }, []);
 
-  // Mesas que cambiaron de estado desde otra pantalla: laten un momento
+  // Mesas que cambiaron de estado desde otra pantalla: rebotan un momento
   useEffect(() => {
     const current = new Map<string, TableStatus>();
     for (const z of zones) for (const t of z.tables) current.set(t.id, t.status);
@@ -112,101 +150,220 @@ export default function TableGrid() {
     if (changed.length === 0) return;
     setPulsing(new Set(changed));
     loadLive();
-    const id = setTimeout(() => setPulsing(new Set()), 3300);
+    const id = setTimeout(() => setPulsing(new Set()), 1600);
     return () => clearTimeout(id);
   }, [zones, loadLive]);
 
+  const allTables = useMemo(() => zones.flatMap((z) => z.tables), [zones]);
+  const activeZone = zones.find((z) => z.id === zoneId) ?? zones[0] ?? null;
+
   const counts = useMemo(() => {
     const c: Record<TableStatus, number> = { free: 0, occupied: 0, paying: 0 };
-    for (const z of zones) for (const t of z.tables) c[t.status] = (c[t.status] ?? 0) + 1;
+    for (const t of allTables) c[t.status] = (c[t.status] ?? 0) + 1;
     return c;
-  }, [zones]);
+  }, [allTables]);
 
-  const openTotal = Array.from(orders.values()).reduce((acc, o) => acc + o.total, 0);
-  const today = new Date(now);
+  const openOrders = Array.from(orders.values());
+  const openTotal = openOrders.reduce((acc, o) => acc + o.total, 0);
+  const avgMinutes = openOrders.length
+    ? Math.round(openOrders.reduce((acc, o) => acc + minutesSince(o.created_at, now), 0) / openOrders.length)
+    : 0;
+
+  const alerts = useMemo(() => {
+    const list: Alert[] = [];
+    for (const t of allTables) {
+      const o = orders.get(t.id);
+      if (t.status === 'paying') {
+        list.push({
+          key: t.id,
+          kind: 'cuenta',
+          table: t,
+          title: `${t.name} pidió la cuenta`,
+          detail: o ? money(o.total) : 'Cuenta pedida',
+          minutes: Number.MAX_SAFE_INTEGER,
+        });
+      } else if (t.status === 'occupied' && o) {
+        const open = minutesSince(o.created_at, now);
+        const idle = minutesSince(o.last_item_at, now);
+        if (o.item_count === 0 && open >= NO_ORDER_MIN) {
+          list.push({ key: t.id, kind: 'sinpedido', table: t, title: `${t.name} sin pedido`, detail: `Sentados hace ${fmtMinutes(open)}`, minutes: open });
+        } else if (o.item_count > 0 && idle >= IDLE_MIN) {
+          list.push({ key: t.id, kind: 'demora', table: t, title: `${t.name} sin pedir hace ${fmtMinutes(idle)}`, detail: `${money(o.total)} · abierta hace ${fmtMinutes(open)}`, minutes: idle });
+        }
+      }
+    }
+    return list.sort((a, b) => b.minutes - a.minutes);
+  }, [allTables, orders, now]);
 
   if (loading) return <div className="p-6 text-slate-500">Cargando salón…</div>;
   if (error) return <div className="p-6 text-red-700">{error}</div>;
 
   return (
-    <div className="flex flex-col gap-4 p-4 sm:p-6 w-full max-w-[1400px] mx-auto">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold text-slate-500">
-            {today.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </p>
-          <h1 className="font-display text-4xl font-extrabold tracking-tight text-slate-900 leading-none">Salón</h1>
-        </div>
-        <div className="flex gap-3">
-          {isAdmin && cobrado != null && (
-            <div className="rounded-2xl border bg-white px-4 py-2 text-right">
-              <p className="text-xs font-semibold text-slate-500">Cobrado hoy</p>
-              <p className="font-display text-2xl font-bold text-slate-900 tabular-nums">{money(cobrado)}</p>
-            </div>
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 p-4 sm:p-5 lg:min-h-[calc(100vh-4rem)] lg:flex-row lg:gap-5 lg:p-6">
+      {/* Plano */}
+      <section aria-label="Plano del salón" className="flex min-w-0 flex-1 flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <div role="tablist" aria-label="Zonas" className="flex gap-5 border-b">
+            {zones.map((z) => {
+              const busy = z.tables.filter((t) => t.status !== 'free').length;
+              const selected = activeZone?.id === z.id;
+              return (
+                <button
+                  key={z.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setZoneId(z.id)}
+                  className={cn(
+                    '-mb-px h-11 border-b-2 text-sm font-extrabold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+                    selected ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-900'
+                  )}
+                >
+                  {z.name} <span className="font-bold text-slate-500">{busy}/{z.tables.length}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex-1" />
+
+          {!connected && (
+            <span className="rounded-lg bg-cuenta px-2.5 py-1 text-xs font-extrabold text-cuenta-fg">Reconectando…</span>
           )}
-          <div className="rounded-2xl border bg-white px-4 py-2 text-right">
-            <p className="text-xs font-semibold text-slate-500">Hora</p>
-            <p className="font-display text-2xl font-bold text-slate-900 tabular-nums">
-              {today.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
-            </p>
+
+          <ul className="flex flex-wrap items-center gap-4" aria-label="Referencias">
+            {LEGEND.map((l) => (
+              <li key={l.status} className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                <span className={cn('h-3.5 w-3.5 rounded', l.swatch)} aria-hidden="true" />
+                {l.label} <span className="font-extrabold text-slate-900">{counts[l.status]}</span>
+              </li>
+            ))}
+          </ul>
+
+          <div role="radiogroup" aria-label="Qué mostrar en las mesas" className="flex gap-0.5 rounded-xl border bg-surface p-[3px]">
+            {METRICS.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                role="radio"
+                aria-checked={metric === m.id}
+                onClick={() => setMetric(m.id)}
+                className={cn(
+                  'h-9 rounded-lg px-3 text-xs font-extrabold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+                  metric === m.id ? 'bg-slate-900 text-slate-50' : 'text-slate-500 hover:text-slate-900'
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
           </div>
         </div>
-      </header>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <ul className="flex flex-wrap gap-2">
-          {ORDER.map((s) => (
-            <li key={s} className="flex items-center gap-2 rounded-full border bg-white px-3 py-1.5 text-sm font-semibold">
-              <span className={cn('h-3 w-3 rounded', SWATCH[s])} />
-              {STATUS_LABELS[s]} · {counts[s]}
-            </li>
-          ))}
-        </ul>
-        <div className="flex items-center gap-3">
-          {!connected && (
-            <span className="rounded-full border border-[#D9A62E] bg-[#FBEFCF] px-3 py-1 text-xs font-semibold text-[#3A2A05]">
-              Reconectando…
-            </span>
-          )}
-          {orders.size > 0 && (
-            <span className="text-sm text-slate-600">
-              Consumo abierto <strong className="text-slate-900 tabular-nums">{money(openTotal)}</strong>
-            </span>
-          )}
-        </div>
-      </div>
-
-      {zones.length === 0 ? (
-        <p className="text-slate-600">
-          No hay zonas cargadas. Créalas en{' '}
-          <Link href="/admin/plano" className="underline">
-            Plano
-          </Link>
-          .
-        </p>
-      ) : (
-        zones.map((zone) => (
-          <section key={zone.id} className="space-y-2">
-            {zones.length > 1 && <h2 className="font-display text-xl font-bold text-slate-900">{zone.name}</h2>}
-            <div className="overflow-x-auto rounded-3xl border bg-white">
-              <div className="relative w-full min-w-[640px] aspect-[5/3]" style={CANVAS_GRID_STYLE}>
-                {zone.tables.length === 0 && (
-                  <p className="absolute inset-0 flex items-center justify-center text-slate-400">Sin mesas en esta zona.</p>
-                )}
-                {zone.tables.map((table) => (
-                  <TableTile
-                    key={table.id}
-                    table={table}
-                    order={orders.get(table.id)}
-                    now={now}
-                    pulse={pulsing.has(table.id)}
-                  />
-                ))}
-              </div>
+        {!activeZone ? (
+          <p className="rounded-2xl border bg-surface p-6 text-slate-600">
+            No hay zonas cargadas.{' '}
+            {isAdmin && (
+              <>
+                Créalas en{' '}
+                <Link href="/admin/plano" className="font-bold underline">
+                  Plano del salón
+                </Link>
+                .
+              </>
+            )}
+          </p>
+        ) : (
+          <div className="flex-1 overflow-x-auto rounded-2xl border bg-canvas" style={FLOOR_DOTS}>
+            <div className="relative aspect-[5/3] w-full min-w-[640px]">
+              {activeZone.tables.length === 0 && (
+                <p className="absolute inset-0 flex items-center justify-center text-slate-500">Sin mesas en esta zona.</p>
+              )}
+              {activeZone.tables.map((table) => (
+                <TableTile
+                  key={table.id}
+                  table={table}
+                  order={orders.get(table.id)}
+                  staffName={orders.get(table.id)?.opened_by ? staffNames.get(orders.get(table.id)!.opened_by!) ?? null : null}
+                  metric={metric}
+                  now={now}
+                  pulse={pulsing.has(table.id)}
+                />
+              ))}
             </div>
-          </section>
-        ))
-      )}
+          </div>
+        )}
+      </section>
+
+      {/* Resumen y avisos */}
+      <aside aria-label="Resumen y avisos" className="flex w-full shrink-0 flex-col gap-3 lg:w-[300px]">
+        <dl className="grid grid-cols-2 overflow-hidden rounded-2xl border bg-surface">
+          <Stat label="Ocupadas" value={`${counts.occupied + counts.paying}/${allTables.length}`} className="border-b border-r" />
+          <Stat label="Consumo abierto" value={money(openTotal)} className="border-b" />
+          <Stat label="Pidieron la cuenta" value={String(counts.paying)} className="border-r" />
+          {isAdmin && cobrado != null ? (
+            <Stat label="Cobrado hoy" value={money(cobrado)} />
+          ) : (
+            <Stat label="Tiempo promedio" value={openOrders.length ? fmtMinutes(avgMinutes) : '—'} />
+          )}
+        </dl>
+
+        <section aria-labelledby="ahora-titulo" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border bg-surface">
+          <h2 id="ahora-titulo" className="px-4 pb-2.5 pt-3.5 text-xs font-extrabold tracking-[0.06em] text-slate-500">
+            AHORA
+          </h2>
+          {alerts.length === 0 ? (
+            <p className="flex items-center gap-3 border-t px-4 py-4 text-sm text-slate-600">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-ok-bg text-ok-fg">
+                <Check size={18} aria-hidden="true" />
+              </span>
+              Todo en orden. Acá aparecen las cuentas pedidas y las mesas que esperan.
+            </p>
+          ) : (
+            <ul className="overflow-y-auto">
+              {alerts.map((a) => (
+                <li key={a.key} className="flex items-center gap-3 border-t px-4 py-3">
+                  <span
+                    className={cn(
+                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                      a.kind === 'cuenta' ? 'bg-cuenta text-cuenta-fg' : 'bg-slate-100 text-slate-900'
+                    )}
+                  >
+                    {a.kind === 'cuenta' ? (
+                      <Receipt size={18} aria-hidden="true" />
+                    ) : a.kind === 'sinpedido' ? (
+                      <UtensilsCrossed size={18} aria-hidden="true" />
+                    ) : (
+                      <Clock size={18} aria-hidden="true" />
+                    )}
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <strong className="text-sm text-slate-900">{a.title}</strong>
+                    <span className="text-xs text-slate-500">{a.detail}</span>
+                  </span>
+                  <Link
+                    href={`/salon/${a.table.id}`}
+                    className={cn(
+                      'flex h-9 shrink-0 items-center rounded-lg px-3 text-[13px] font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+                      a.kind === 'cuenta' ? 'bg-blue-600 text-white hover:bg-blue-700' : 'border text-slate-900 hover:bg-slate-100'
+                    )}
+                  >
+                    {a.kind === 'cuenta' ? 'Cobrar' : 'Abrir'}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </aside>
+    </div>
+  );
+}
+
+function Stat({ label, value, className }: { label: string; value: string; className?: string }) {
+  return (
+    <div className={cn('px-4 py-3', className)}>
+      <dt className="text-[11px] font-bold text-slate-500">{label}</dt>
+      <dd className="mt-0.5 font-display text-xl font-extrabold tabular-nums text-slate-900">{value}</dd>
     </div>
   );
 }
@@ -214,24 +371,60 @@ export default function TableGrid() {
 function TableTile({
   table,
   order,
+  staffName,
+  metric,
   now,
   pulse,
 }: {
   table: FloorTable;
   order?: OpenOrderSummary;
+  staffName: string | null;
+  metric: Metric;
   now: number;
   pulse: boolean;
 }) {
   const round = table.shape === 'round';
   const status: TableStatus = (STYLES[table.status] ? table.status : 'free') as TableStatus;
-  const time = order ? elapsed(order.created_at, now) : '';
+  const open = order ? minutesSince(order.created_at, now) : 0;
+  const idle = order ? minutesSince(order.last_item_at, now) : 0;
+  const empty = !!order && order.item_count === 0;
+  const initial = staffName?.trim()[0]?.toUpperCase() ?? null;
+
+  // Aviso de demora (solo mesas ocupadas, no las que pidieron la cuenta)
+  const warn =
+    status === 'occupied' && order
+      ? empty && open >= NO_ORDER_MIN
+        ? `Sin pedido · ${fmtMinutes(open)}`
+        : !empty && idle >= IDLE_MIN
+          ? `Sin pedir · ${fmtMinutes(idle)}`
+          : null
+      : null;
+
+  const value =
+    status === 'free'
+      ? table.capacity
+        ? `${table.capacity} ${table.capacity === 1 ? 'lugar' : 'lugares'}`
+        : 'Libre'
+      : metric === 'time'
+        ? order
+          ? fmtMinutes(open)
+          : '—'
+        : metric === 'staff'
+          ? staffName ?? (order ? 'Admin' : '—')
+          : empty
+            ? 'Sin pedido'
+            : order
+              ? money(order.total)
+              : '—';
 
   const label =
     status === 'free'
-      ? `${table.name}, libre${table.capacity ? `, ${table.capacity} personas` : ''}`
-      : `${table.name}, ${status === 'paying' ? 'pidió la cuenta' : 'ocupada'}${time ? ` hace ${time}` : ''}${
-          order ? `, consumo ${money(order.total)}` : ''
-        }`;
+      ? `${table.name}, libre${table.capacity ? `, ${table.capacity} lugares` : ''}`
+      : `${table.name}, ${status === 'paying' ? 'pidió la cuenta' : 'ocupada'}${order ? `, ${money(order.total)}, hace ${fmtMinutes(open)}` : ''}${
+          staffName ? `, atiende ${staffName}` : ''
+        }${warn ? `, ${warn}` : ''}`;
+
+  const bigValue = status !== 'free' && metric === 'total' && !empty;
 
   return (
     <Link
@@ -239,29 +432,39 @@ function TableTile({
       aria-label={label}
       style={tableStyle(table)}
       className={cn(
-        'absolute flex flex-col border-2 p-1.5 sm:p-2 transition-colors duration-300 overflow-hidden',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2',
-        round ? 'rounded-full items-center justify-center text-center' : 'rounded-2xl justify-between',
+        'absolute flex flex-col overflow-hidden border-[1.5px] p-1.5 transition-colors duration-200 sm:p-2 lg:p-2.5',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2',
+        round ? 'items-center justify-center rounded-full text-center' : 'justify-between rounded-xl',
         STYLES[status],
         pulse && 'mesa-pulso'
       )}
     >
-      <span className={cn('flex w-full items-baseline gap-1', round ? 'justify-center' : 'justify-between')}>
-        <span className="font-display text-sm sm:text-base lg:text-lg font-bold leading-tight truncate">{table.name}</span>
-        {!round && time && <span className="text-[10px] sm:text-xs font-bold opacity-90 shrink-0">{time}</span>}
+      <span className={cn('flex w-full items-center gap-1', round ? 'justify-center' : 'justify-between')}>
+        <span className="truncate font-display text-sm font-extrabold leading-tight sm:text-base lg:text-xl">{table.name}</span>
+        {!round && status === 'paying' && <span className="shrink-0 text-[9px] font-extrabold tracking-wide sm:text-[10px]">CUENTA</span>}
+        {!round && status === 'occupied' && initial && (
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/20 text-[10px] font-extrabold lg:h-6 lg:w-6 lg:text-xs" aria-hidden="true">
+            {initial}
+          </span>
+        )}
       </span>
-      <span className="flex flex-col leading-tight">
-        {status === 'free' ? (
-          <span className="text-[10px] sm:text-xs font-semibold">Libre{table.capacity ? ` · ${table.capacity}` : ''}</span>
-        ) : (
-          <>
-            <span className="text-[10px] sm:text-xs font-semibold opacity-90">
-              {status === 'paying' ? 'Cuenta' : round && time ? time : 'Ocupada'}
-            </span>
-            {order && (
-              <span className="font-display text-xs sm:text-sm lg:text-base font-bold tabular-nums">{money(order.total)}</span>
-            )}
-          </>
+
+      <span className={cn('flex w-full flex-col leading-tight', round ? 'items-center' : 'items-start')}>
+        <span
+          className={cn(
+            'truncate',
+            bigValue
+              ? cn('font-display font-bold tabular-nums', round ? 'text-[11px] sm:text-xs lg:text-base' : 'text-xs sm:text-sm lg:text-lg')
+              : 'text-[10px] font-semibold sm:text-xs',
+            status === 'free' && 'text-slate-500'
+          )}
+        >
+          {value}
+        </span>
+        {!round && warn && (
+          <span className="mt-1 max-w-full truncate rounded-md bg-[#FFFFFF] px-1.5 py-0.5 text-[9px] font-extrabold text-[#8A2E1E] sm:text-[10px]">
+            {warn}
+          </span>
         )}
       </span>
     </Link>

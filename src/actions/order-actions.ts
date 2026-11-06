@@ -231,11 +231,32 @@ export async function voidPayment(paymentId: string, staffToken: string | null) 
 }
 
 // Mesas abiertas con su consumo, para el salón
-export type OpenOrderSummary = { table_id: string; total: number; created_at: string };
+export type OpenOrderSummary = {
+  table_id: string;
+  total: number;
+  created_at: string;
+  opened_by: string | null; // mozo que abrió la mesa (null si la abrió el admin)
+  item_count: number; // unidades pedidas
+  last_item_at: string | null; // último producto enviado
+};
 
 export async function getOpenOrdersSummary() {
   const supabase = createClient();
-  const { data, error } = await supabase.from('orders').select('table_id, total, created_at').eq('status', 'open');
+  const { data, error } = await supabase
+    .from('orders')
+    .select('table_id, total, created_at, opened_by, order_items ( quantity, created_at )')
+    .eq('status', 'open');
   if (error) throw error;
-  return (data ?? []).map((o: any) => ({ ...o, total: Number(o.total ?? 0) })) as OpenOrderSummary[];
+  return (data ?? []).map((o: any) => {
+    const items = (o.order_items ?? []) as { quantity: number; created_at: string }[];
+    const last = items.reduce<string | null>((acc, i) => (!acc || i.created_at > acc ? i.created_at : acc), null);
+    return {
+      table_id: o.table_id,
+      total: Number(o.total ?? 0),
+      created_at: o.created_at,
+      opened_by: o.opened_by ?? null,
+      item_count: items.reduce((acc, i) => acc + Number(i.quantity ?? 0), 0),
+      last_item_at: last,
+    };
+  }) as OpenOrderSummary[];
 }
